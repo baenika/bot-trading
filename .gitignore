@@ -1,0 +1,7 @@
+salida/
+__pycache__/
+*.pyc
+.pytest_cache/
+datos/*.csv
+!datos/ejemplo.csv
+.env
