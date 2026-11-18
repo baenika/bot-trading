@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="theme-color" content="#0a0a0c">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Consejo de Trading — Panel</title>
+<style>
+  :root{
+    --bg:#0a0a0c; --card:#141417; --line:#232328; --ink:#f3f3f5; --ink2:#c2c2ca; --muted:#7c7c86;
+    --soft:#1c1c20; --accent:#f05a28; --accent2:#ff8a4c; --up:#34d27f; --upbg:rgba(52,210,127,.13);
+    --down:#ff5d5d; --downbg:rgba(255,93,93,.13); --wait:#f2b14c; --waitbg:rgba(242,177,76,.13); --r:22px; --bar:#f3f3f5; --grid:#202025; --tick:#6f6f78; color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.45 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-columns:72px 1fr;min-height:100vh}
+  /* barra lateral */
+  .side{display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 0}
+  .side .grp{background:var(--card);border:1px solid var(--line);border-radius:40px;padding:8px;display:flex;flex-direction:column;gap:6px}
+  .side a{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:var(--muted);text-decoration:none;font-size:16px}
+  .side a.on{background:var(--ink);color:#0a0a0c}
+  .side a:hover{background:var(--soft);color:var(--ink)} .side a.on:hover{background:var(--ink);color:#0a0a0c}
+  main{padding:22px 26px 40px 4px;max-width:1440px;width:100%}
+  /* cabecera */
+  header{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--line);border-radius:40px;padding:6px 14px 6px 6px;font-weight:650}
+  .logo{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--accent2),var(--accent));color:#fff;display:grid;place-items:center;font-weight:800}
+  nav.pills{display:flex;gap:2px;background:var(--card);border:1px solid var(--line);border-radius:40px;padding:5px;margin:0 auto}
+  nav.pills a{padding:7px 15px;border-radius:30px;color:var(--ink2);text-decoration:none;font-size:13px;white-space:nowrap}
+  nav.pills a.on{background:var(--ink);color:#0a0a0c}
+  nav.pills.desk{margin:0;padding:4px} nav.pills.desk a{padding:6px 12px}
+  nav.pills.desk a.on{background:linear-gradient(135deg,var(--accent2),var(--accent));color:#fff}
+  .kills{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px 22px}
+  .right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:30px;padding:7px 12px;font-size:12px;color:var(--ink2);white-space:nowrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--up)}
+  .dot.off{background:var(--down)} .dot.idle{background:#4a4a52}
+  .avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--accent2),var(--accent));color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700}
+  h1{font-size:34px;letter-spacing:-.02em;margin:26px 0 2px;font-weight:650}
+  .sub{color:var(--muted);margin:0 0 18px}
+  .banner{background:var(--waitbg);color:var(--wait);border-radius:14px;padding:10px 14px;margin:0 0 16px;font-size:13px}
+  .banner.stop{background:var(--downbg);color:var(--down);font-weight:600}
+  /* rejilla */
+  .grid{display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:20px;min-width:0}
+  .c4{grid-column:span 4}.c5{grid-column:span 5}.c3{grid-column:span 3}.c8{grid-column:span 8}.c12{grid-column:span 12}.c6{grid-column:span 6}
+  .ct{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px}
+  .ct h3{margin:0;font-size:15px;font-weight:600}
+  .ct small{color:var(--muted);font-size:12px}
+  .big{font-size:34px;font-weight:650;letter-spacing:-.02em;margin:4px 0}
+  .badge{display:inline-flex;align-items:center;gap:3px;border-radius:20px;padding:2px 8px;font-size:12px;font-weight:600}
+  .up{background:var(--upbg);color:var(--up)} .down{background:var(--downbg);color:var(--down)}
+  .neutral{background:var(--soft);color:var(--ink2)} .waitc{background:var(--waitbg);color:var(--wait)}
+  .muted{color:var(--muted)}
+  .row{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  .btn{flex:1;min-width:110px;border-radius:30px;padding:10px 12px;text-align:center;font-size:13px;font-weight:600;border:1px solid var(--line);background:var(--soft);color:var(--ink)}
+  .btn.dark{background:var(--ink);color:#0a0a0c;border-color:var(--ink)}
+  .wallets{margin-top:16px;background:var(--soft);border-radius:16px;padding:12px}
+  .wallets .lbl{font-size:12px;color:var(--muted);margin-bottom:8px}
+  .wl{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px}
+  .w{background:var(--card);border-radius:12px;padding:10px}
+  .w b{display:block;font-size:12px} .w span{font-size:14px;font-weight:600}
+  /* tarjetas KPI */
+  .kpis{display:grid;grid-template-columns:1fr 1fr;gap:12px;height:100%}
+  .kpi{border-radius:18px;background:var(--soft);padding:16px;display:flex;flex-direction:column;justify-content:space-between;min-height:118px}
+  .kpi .t{font-size:12px;color:var(--muted);display:flex;justify-content:space-between}
+  .kpi .v{font-size:26px;font-weight:650;letter-spacing:-.02em}
+  .kpi.hot{background:linear-gradient(150deg,var(--accent2) 0%,var(--accent) 70%);color:#fff;box-shadow:0 12px 30px -12px rgba(240,90,40,.55)}
+  .kpi.hot .t{color:rgba(255,255,255,.85)} .kpi.hot .badge{background:rgba(255,255,255,.22);color:#fff}
+  .ico{width:24px;height:24px;border-radius:50%;background:var(--card);display:grid;place-items:center;font-size:12px}
+  .kpi.hot .ico{background:rgba(255,255,255,.25)}
+  /* gráficos */
+  svg{display:block;width:100%;overflow:visible}
+  .legend{display:flex;gap:12px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+  .tip{position:fixed;pointer-events:none;background:#f3f3f5;color:#0a0a0c;font-size:12px;padding:6px 9px;border-radius:9px;opacity:0;transition:opacity .1s;z-index:9;white-space:nowrap}
+  /* veredicto */
+  .verdict{display:flex;align-items:center;gap:12px}
+  .vchip{font-size:22px;font-weight:700;border-radius:14px;padding:8px 14px}
+  .vchip.COMPRAR,.vchip.VENDER{background:var(--upbg);color:var(--up)}
+  .vchip.ESPERAR{background:var(--waitbg);color:var(--wait)}
+  .vchip.PASAR{background:var(--downbg);color:var(--down)}
+  .lv{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
+  .lv li{display:flex;gap:8px;align-items:flex-start}
+  .lv li span:first-child{flex:none;width:18px;text-align:center}
+  .plan{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+  .plan div{background:var(--soft);border-radius:12px;padding:9px 10px}
+  .plan small{display:block;color:var(--muted);font-size:11px} .plan b{font-size:14px}
+  .meter{height:8px;border-radius:8px;background:var(--soft);overflow:hidden;margin-top:6px}
+  .meter i{display:block;height:100%;border-radius:8px;background:var(--ink)}
+  /* bots */
+  .bots{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .bot{border:1px solid var(--line);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+  .bot .h{display:flex;align-items:center;gap:10px}
+  .bot .em{width:38px;height:38px;border-radius:12px;background:var(--soft);display:grid;place-items:center;font-size:19px}
+  .bot.lead .em{background:linear-gradient(135deg,var(--accent2),var(--accent))}
+  .bot .n{font-weight:600} .bot .r{font-size:12px;color:var(--muted)}
+  .bot .msg{font-size:12.5px;color:var(--ink2);background:var(--soft);border-radius:12px;padding:9px 10px;white-space:pre-line;max-height:118px;overflow:auto}
+  .bot .tm{margin-left:auto;font-size:11px;color:var(--muted);text-align:right}
+  /* riesgo / embudo */
+  .lim{margin-bottom:14px} .lim .t{display:flex;justify-content:space-between;font-size:13px}
+  .funnel{display:flex;flex-direction:column;gap:10px}
+  .fr .t{display:flex;justify-content:space-between;font-size:13px}
+  .fr .bar{height:26px;border-radius:9px;background:var(--soft);overflow:hidden;margin-top:4px}
+  .fr .bar i{display:block;height:100%;border-radius:9px}
+  .note{margin-top:14px;background:var(--soft);border-radius:14px;padding:12px;font-size:12.5px;color:var(--ink2)}
+  /* tablas */
+  .tablewrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--muted);font-weight:500;font-size:12px;padding:9px 10px;background:var(--soft)}
+  th:first-child{border-radius:10px 0 0 10px} th:last-child{border-radius:0 10px 10px 0}
+  td{padding:11px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tr:last-child td{border-bottom:0}
+  .search{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:30px;padding:6px 12px}
+  .search input{border:0;outline:0;font:inherit;font-size:13px;width:130px;background:transparent}
+  .empty{color:var(--muted);text-align:center;padding:22px;font-size:13px}
+  .side-h{font-weight:600}
+  @media (max-width:1100px){.c4,.c5,.c3{grid-column:span 6}.c8{grid-column:span 12}.bots{grid-template-columns:repeat(2,1fr)}}
+  @media (max-width:760px){
+    .app{grid-template-columns:1fr}.side{display:none} main{padding:14px 12px 30px}
+    .c3,.c4,.c5,.c6,.c8{grid-column:span 12} nav.pills{order:3;width:100%;overflow-x:auto;margin:0}
+    h1{font-size:26px;margin-top:18px}.bots{grid-template-columns:1fr}.big{font-size:30px}
+    .right .chip.hide-m{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="grp"><a href="#resumen" class="on" title="Resumen">◉</a><a href="#curva" title="Curva">◷</a></div>
+    <div class="grp"><a href="#bots" title="Bots">✦</a><a href="#riesgo" title="Riesgo">⛨</a><a href="#ops" title="Operaciones">≡</a></div>
+  </aside>
+  <main>
+    <header>
+      <div class="brand"><div class="logo">C</div>Consejo</div>
+      <nav class="pills">
+        <a href="#resumen" class="on">Resumen</a><a href="#curva">Capital</a><a href="#bots">Bots</a>
+        <a href="#riesgo">Riesgo</a><a href="#ops">Operaciones</a>
+      </nav>
+      <div class="right">
+        <nav class="pills desk" id="deskNav"><a href="#cripto" data-d="cripto">Cripto</a><a href="#memes" data-d="memes">🪙 Memes</a></nav>
+        <span class="chip" id="srcChip"><span class="dot" id="srcDot"></span><span id="srcTxt">—</span></span>
+        <span class="chip hide-m" id="modeChip">PAPER</span>
+        <div class="avatar">DB</div>
+      </div>
+    </header>
+
+    <h1 id="hello">Hola, David</h1>
+    <p class="sub" id="subline">Cargando datos…</p>
+    <div id="banners"></div>
+
+    <section class="grid" id="resumen">
+      <div class="card c4">
+        <div class="ct"><small>Capital total</small><span class="chip" style="padding:4px 10px">USDT</span></div>
+        <div class="big" id="equity">—</div>
+        <div><span class="badge" id="eqBadge">—</span> <span class="muted" style="font-size:12px">desde el inicio</span></div>
+        <div class="row">
+          <div class="btn dark" id="todayBtn">Hoy —</div>
+          <div class="btn" id="ddBtn">Drawdown —</div>
+        </div>
+        <div class="wallets"><div class="lbl" id="wlLbl">Mercados vigilados</div><div class="wl" id="wallets"></div></div>
+      </div>
+
+      <div class="card c4">
+        <div class="kpis">
+          <div class="kpi hot"><div class="t">Rentabilidad <span class="ico">↗</span></div><div class="v" id="kRet">—</div><div><span class="badge" id="kRetB">—</span></div></div>
+          <div class="kpi"><div class="t">Acierto <span class="ico">◎</span></div><div class="v" id="kWin">—</div><div class="muted" style="font-size:12px" id="kWinS">—</div></div>
+          <div class="kpi"><div class="t">Profit factor <span class="ico">⚖</span></div><div class="v" id="kPf">—</div><div><span class="badge" id="kPfB">—</span></div></div>
+          <div class="kpi"><div class="t">R medio <span class="ico">R</span></div><div class="v" id="kR">—</div><div class="muted" style="font-size:12px">por operación</div></div>
+        </div>
+      </div>
+
+      <div class="card c4">
+        <div class="ct"><div><h3>Resultado diario</h3><small>Ganancia o pérdida por día</small></div></div>
+        <div class="legend"><span><i style="background:var(--bar)"></i>Ganancia</span><span><i style="background:var(--accent)"></i>Pérdida</span></div>
+        <div id="daily" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card c8" id="curva">
+        <div class="ct"><div><h3>Curva de capital</h3><small id="curveSub">Capital ficticio a lo largo del tiempo</small></div>
+          <div class="legend" id="curveLegend"></div></div>
+        <div id="curve"></div>
+      </div>
+
+      <div class="card c4">
+        <div class="ct"><div><h3>🤨 Veredicto del Skeptic</h3><small id="vSub">Última decisión</small></div></div>
+        <div id="verdict"><div class="empty">Todavía no hay ninguna alerta del Scout.</div></div>
+      </div>
+
+      <div class="card c12" id="bots">
+        <div class="ct"><div><h3>El consejo</h3><small>Lo último que ha dicho cada bot</small></div><small id="botsOn">—</small></div>
+        <div class="bots" id="botGrid"></div>
+      </div>
+
+      <div class="card c4" id="riesgo">
+        <div class="ct"><div><h3>🛡️ Riesgo</h3><small>Límites del Risk manager</small></div></div>
+        <div id="limits"></div>
+      </div>
+
+      <div class="card c4">
+        <div class="ct"><div><h3>Embudo del Skeptic</h3><small>Qué hizo con cada alerta</small></div></div>
+        <div class="funnel" id="funnel"></div>
+        <div id="saved"></div>
+      </div>
+
+      <div class="card c4">
+        <div class="ct"><div><h3>Posiciones abiertas</h3><small id="posSub">—</small></div></div>
+        <div id="positions"></div>
+      </div>
+
+      <div class="card c12" id="killsCard" style="display:none">
+        <div class="ct"><div><h3>Descartes por regla</h3><small>Cuántas monedas ha eliminado cada regla antes de mover dinero</small></div><small id="killsTot"></small></div>
+        <div class="kills" id="kills"></div>
+      </div>
+
+      <div class="card c12" id="ops">
+        <div class="ct"><div><h3>Últimas operaciones</h3><small>Las 30 más recientes</small></div>
+          <label class="search">⌕<input id="q" placeholder="Buscar símbolo…"></label></div>
+        <div class="tablewrap"><table><thead><tr><th>Símbolo</th><th>Lado</th><th>Entrada</th><th>Salida</th><th>Resultado</th><th>R</th><th>Motivo</th><th>Cerrada</th></tr></thead><tbody id="tbody"></tbody></table></div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+/* DEMO_DATA */
+const BOTS = [
+  ["scout","🔭","Scout","Detecta movimientos grandes"],
+  ["news","📰","Noticias","Busca por qué se mueve"],
+  ["chart","📈","Chart","Entrada, stop y objetivo"],
+  ["sentimental","🧊","Sentimental","Frena el FOMO y el pánico"],
+  ["skeptic","🤨","Skeptic","Decide: comprar, esperar o pasar"],
+  ["risk","🛡️","Risk","Tamaño y límites"],
+];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const money = (v, d=2) => v==null||isNaN(v) ? "—" : "$" + Number(v).toLocaleString("es-ES",{minimumFractionDigits:d,maximumFractionDigits:d});
+const sgn = (v, d=2, suf="") => v==null||isNaN(v) ? "—" : (v>0?"+":"") + Number(v).toLocaleString("es-ES",{minimumFractionDigits:d,maximumFractionDigits:d}) + suf;
+const px = v => v==null ? "—" : Number(v).toLocaleString("es-ES",{maximumFractionDigits: v<10?4:2});
+const badge = (el, v, txt) => { el.className = "badge " + (v>0?"up":v<0?"down":"neutral"); el.textContent = txt; };
+let DATA = null, isDemo = false;
+
+function hello(){
+  const h = new Date().getHours();
+  $("hello").textContent = (h<6?"Buenas noches":h<13?"Buenos días":h<21?"Buenas tardes":"Buenas noches") + ", David";
+}
+function ago(iso){
+  const m = Math.round((Date.now() - new Date(iso).getTime())/60000);
+  if (isNaN(m)) return "";
+  return m<1?"ahora mismo":m<60?`hace ${m} min`:m<1440?`hace ${Math.round(m/60)} h`:`hace ${Math.round(m/1440)} d`;
+}
+
+/* ---------- gráficos SVG ---------- */
+const tip = $("tip");
+function showTip(e, html){ tip.innerHTML = html; tip.style.opacity = 1; tip.style.left = (e.clientX+12)+"px"; tip.style.top = (e.clientY-34)+"px"; }
+function hideTip(){ tip.style.opacity = 0; }
+
+function lineChart(el, series, base){
+  const W = Math.max(el.clientWidth, 280), H = W < 500 ? 210 : 280, P = {l:58,r:12,t:10,b:26};
+  const all = series.flatMap(s => s.pts.map(p => p[1])).concat(base!=null?[base]:[]);
+  if (!all.length){ el.innerHTML = '<div class="empty">Sin datos todavía.</div>'; return; }
+  let lo = Math.min(...all), hi = Math.max(...all); const pad = (hi-lo)*.08 || hi*.01 || 1; lo -= pad; hi += pad;
+  const n = Math.max(...series.map(s => s.pts.length));
+  const X = i => P.l + (W-P.l-P.r) * (n<=1?0:i/(n-1)), Y = v => P.t + (H-P.t-P.b) * (1-(v-lo)/(hi-lo));
+  let g = "";
+  for (let k=0;k<=4;k++){ const v = lo+(hi-lo)*k/4, y = Y(v);
+    g += `<line x1="${P.l}" x2="${W-P.r}" y1="${y}" y2="${y}" stroke="#202025"/><text x="${P.l-8}" y="${y+4}" text-anchor="end" font-size="11" fill="#6f6f78">${Math.round(v).toLocaleString("es-ES")}</text>`; }
+  if (base!=null) g += `<line x1="${P.l}" x2="${W-P.r}" y1="${Y(base)}" y2="${Y(base)}" stroke="#55555e" stroke-dasharray="4 4"/>`;
+  const main = series[0].pts;
+  [0, Math.floor((main.length-1)/2), main.length-1].forEach(i => { if (main[i]) g += `<text x="${X(i)}" y="${H-6}" text-anchor="${i===0?"start":i===main.length-1?"end":"middle"}" font-size="11" fill="#6f6f78">${esc(String(main[i][0]).slice(0,10))}</text>`; });
+  series.slice().reverse().forEach((s, ri) => {
+    const d = s.pts.map((p,i) => (i?"L":"M") + X(i).toFixed(1) + " " + Y(p[1]).toFixed(1)).join(" ");
+    if (s.fill){
+      g += `<defs><linearGradient id="gf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${s.color}" stop-opacity=".16"/><stop offset="1" stop-color="${s.color}" stop-opacity="0"/></linearGradient></defs>`;
+      g += `<path d="${d} L${X(s.pts.length-1)} ${H-P.b} L${X(0)} ${H-P.b} Z" fill="url(#gf)"/>`;
+    }
+    g += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.w||2}" stroke-linejoin="round" ${s.dash?'stroke-dasharray="5 4"':""}/>`;
+  });
+  g += `<line id="hv" y1="${P.t}" y2="${H-P.b}" stroke="#fff" stroke-width="1" opacity="0"/><circle id="hc" r="4.5" fill="#141417" stroke="${series[0].color}" stroke-width="2.5" opacity="0"/>`;
+  g += `<rect x="${P.l}" y="0" width="${W-P.l-P.r}" height="${H}" fill="transparent" id="hz"/>`;
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" height="${H}">${g}</svg>`;
+  const svg = el.querySelector("svg"), hv = svg.querySelector("#hv"), hc = svg.querySelector("#hc");
+  svg.querySelector("#hz").addEventListener("mousemove", e => {
+    const r = svg.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width;
+    const i = Math.max(0, Math.min(main.length-1, Math.round((x-P.l)/(W-P.l-P.r)*(n-1))));
+    hv.setAttribute("x1", X(i)); hv.setAttribute("x2", X(i)); hv.setAttribute("opacity", .15);
+    hc.setAttribute("cx", X(i)); hc.setAttribute("cy", Y(main[i][1])); hc.setAttribute("opacity", 1);
+    const lines = series.map(s => s.pts[i] ? `${s.name}: <b>${money(s.pts[i][1])}</b>` : "").filter(Boolean).join("<br>");
+    showTip(e, `${esc(String(main[i][0]).replace("T"," ").slice(0,16))}<br>${lines}`);
+  });
+  svg.querySelector("#hz").addEventListener("mouseleave", () => { hideTip(); hv.setAttribute("opacity",0); hc.setAttribute("opacity",0); });
+}
+
+function barChart(el, rows){
+  if (!rows.length){ el.innerHTML = '<div class="empty">Aún no hay días con operaciones cerradas.</div>'; return; }
+  const W = Math.max(el.clientWidth, 240), H = 190, P = {l:6,r:6,t:14,b:22};
+  const m = Math.max(...rows.map(r => Math.abs(r[1])), 1);
+  const zero = P.t + (H-P.t-P.b)/2, half = (H-P.t-P.b)/2, bw = (W-P.l-P.r)/rows.length;
+  let g = `<line x1="${P.l}" x2="${W-P.r}" y1="${zero}" y2="${zero}" stroke="#2a2a30"/>`;
+  rows.forEach((r,i) => {
+    const h = Math.max(2, Math.abs(r[1])/m*half), x = P.l + i*bw + bw*.22, w = Math.max(6, bw*.56);
+    const y = r[1] >= 0 ? zero - h : zero;
+    g += `<rect class="b" data-i="${i}" x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.min(6,w/2,h/2)}" fill="${r[1]>=0?"#f3f3f5":"#f05a28"}"/>`;
+    const step = Math.ceil(rows.length/(W<360?4:6));
+    if (i % step === 0 && (rows.length-1-i >= step || i === rows.length-1) || (i === rows.length-1))
+      g += `<text x="${x+w/2}" y="${H-5}" text-anchor="middle" font-size="10.5" fill="#6f6f78">${esc(r[0].slice(5))}</text>`;
+  });
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" height="${H}">${g}</svg>`;
+  el.querySelectorAll(".b").forEach(b => {
+    b.addEventListener("mousemove", e => { const r = rows[+b.dataset.i]; showTip(e, `${esc(r[0])}<br><b>${sgn(r[1])} $</b>`); });
+    b.addEventListener("mouseleave", hideTip);
+  });
+}
+
+/* ---------- pintar ---------- */
+function render(d){
+  DATA = d; hello();
+  const live = d.source === "live";
+  $("srcTxt").textContent = isDemo ? "Demo" : live ? "En vivo" : "Backtest";
+  $("srcDot").className = "dot" + (d.stopped ? " off" : isDemo ? " idle" : "");
+  $("modeChip").textContent = (d.mode || "paper").toUpperCase() === "PAPER" ? "PAPER · dinero ficticio" : d.mode.toUpperCase();
+  $("subline").textContent = `${(d.symbols||[]).join(", ")} · ${d.timeframe} · ` +
+    (live ? `actualizado ${ago(d.updated)}` : `backtest ${d.period || ""}`);
+  let bn = "";
+  if (isDemo) bn += `<div class="banner">Datos de demostración (backtest con ${d.desk === "memes" ? "una grabación de memecoins inventada" : "velas inventadas"}). Con el bot en marcha verás tus datos reales.</div>`;
+  if (d.stopped) bn += `<div class="banner stop">⛔ Interruptor activado: el bot está parado.</div>`;
+  $("banners").innerHTML = bn;
+
+  const s = d.stats || {}, ret = (d.equity / d.start_equity - 1) * 100;
+  $("equity").textContent = money(d.equity);
+  badge($("eqBadge"), ret, sgn(ret,2,"%"));
+  $("todayBtn").textContent = live ? `Hoy ${sgn(d.today_pnl)} $` : `Inicial ${money(d.start_equity,0)}`;
+  const dd = d.peak ? (d.equity/d.peak - 1)*100 : 0;
+  $("ddBtn").textContent = `Drawdown ${sgn(dd,1,"%")}`;
+  const prices = {}; (d.positions||[]).forEach(p => p.price && (prices[p.symbol] = p.price));
+  $("wallets").innerHTML = (d.symbols||[]).map(sym => {
+    const open = (d.positions||[]).filter(p => p.symbol === sym);
+    return `<div class="w"><b>${esc(sym.replace(/USDT$/,""))}</b><span>${open.length ? open.length + " abierta" + (open.length>1?"s":"") : "sin posición"}</span></div>`;
+  }).join("");
+
+  $("kRet").textContent = sgn(s.return_pct ?? ret, 2, "%");
+  const bh = d.skeptic_saved && d.skeptic_saved.buy_hold_pct;
+  $("kRetB").textContent = bh!=null ? `vs ${sgn(bh,1,"%")} comprar y mantener` : `${s.trades||0} operaciones`;
+  $("kWin").textContent = s.win_rate!=null ? s.win_rate.toLocaleString("es-ES",{maximumFractionDigits:1})+"%" : "—";
+  $("kWinS").textContent = `${s.trades||0} operaciones cerradas`;
+  $("kPf").textContent = s.profit_factor!=null ? s.profit_factor.toLocaleString("es-ES",{minimumFractionDigits:2,maximumFractionDigits:2}) : "—";
+  if (s.profit_factor!=null) badge($("kPfB"), s.profit_factor-1.3, s.profit_factor>=1.3 ? "objetivo > 1,3 ✓" : "objetivo > 1,3");
+  else { $("kPfB").className="badge neutral"; $("kPfB").textContent="sin datos"; }
+  $("kR").textContent = s.avg_R!=null ? sgn(s.avg_R,2,"R") : "—";
+
+  barChart($("daily"), d.daily_pnl || []);
+
+  const series = [{name:"Con Skeptic", pts:d.curve||[], color:"#f05a28", w:2.4, fill:true}];
+  let leg = `<span><i style="background:#f05a28"></i>Con Skeptic</span>`;
+  if (d.compare_curve){ series.push({name:"Sin Skeptic", pts:d.compare_curve, color:"#9a9aa4", w:1.4, dash:true}); leg += `<span><i style="background:#9a9aa4"></i>Sin Skeptic</span>`; }
+  leg += `<span><i style="background:#55555e"></i>Capital inicial</span>`;
+  $("curveLegend").innerHTML = leg;
+  $("curveSub").textContent = d.compare_curve ? "El backtest se repite sin el Skeptic para comparar" : "Capital ficticio a lo largo del tiempo";
+  lineChart($("curve"), series, d.start_equity);
+
+  const v = d.last_decision;
+  if (v){
+    const temp = Math.round(v.temperature ?? 0);
+    $("vSub").textContent = `${v.symbol} · ${String(v.time).replace("T"," ")}`;
+    const li = (arr, ic) => (arr||[]).map(x => `<li><span>${ic}</span><span>${esc(x)}</span></li>`).join("");
+    $("verdict").innerHTML = `
+      <div class="verdict"><span class="vchip ${esc(v.decision)}">${esc(v.decision)}</span>
+        <div><div style="font-weight:600">${v.dir==="long"?"Largo ↑":"Corto ↓"} · puntuación ${sgn(v.score,1)}</div>
+        <div class="muted" style="font-size:12px">Temperatura emocional ${temp}/100</div>
+        <div class="meter" style="width:160px"><i style="width:${temp}%;background:${temp>=80?"var(--down)":temp>=50?"var(--wait)":"var(--up)"}"></i></div></div></div>
+      <ul class="lv">${li(v.vetoes,"⛔")}${li(v.pros,"➕")}${li(v.cons,"➖")}</ul>
+      ${v.sim && v.sim.p_tp!=null ? `<div class="note" style="margin-top:12px">🕰️ <b>Máquina del tiempo</b> <span class="muted">(solo informativo)</span><br>
+        En ${Number(v.sim.paths).toLocaleString("es-ES")} futuros posibles: objetivo primero <b style="color:var(--up)">${v.sim.p_tp}%</b> · stop primero <b style="color:var(--down)">${v.sim.p_sl}%</b> · ninguno ${v.sim.p_none}%
+        <div class="meter" style="display:flex;height:9px"><i style="width:${v.sim.p_tp}%;background:var(--up);border-radius:0"></i><i style="width:${v.sim.p_sl}%;background:var(--down);border-radius:0"></i></div>
+        <span class="muted" style="font-size:12px">Para no perder hace falta un ${v.sim.breakeven}%</span></div>` : ""}
+      <div class="plan"><div><small>Entrada</small><b>${px(v.wait_price || v.entry)}</b></div>
+        <div><small>Stop loss</small><b style="color:var(--down)">${px(v.sl)}</b></div>
+        <div><small>Objetivo</small><b style="color:var(--up)">${px(v.tp)}</b></div></div>`;
+  }
+
+  const bl = d.bots || {}; let on = 0;
+  $("botGrid").innerHTML = BOTS.map(([k, em, name, role]) => {
+    const b = bl[k]; if (b) on++;
+    return `<div class="bot ${k==="skeptic"?"lead":""}"><div class="h"><div class="em">${em}</div>
+      <div><div class="n">${name}${k==="skeptic"?' <span class="badge waitc">manda</span>':""}</div><div class="r">${role}</div></div>
+      <div class="tm"><span class="dot ${b?"":"idle"}" style="display:inline-block"></span><br>${b?esc(String(b.time).replace("T"," ").slice(5,16)):"sin mensajes"}</div></div>
+      <div class="msg">${b?esc(b.text):"Esperando la próxima alerta del Scout."}</div></div>`;
+  }).join("");
+  $("botsOn").textContent = `${on}/6 han hablado`;
+
+  const L = d.limits || {}, dayLoss = d.day_start ? Math.max(0, -(d.equity/d.day_start-1)*100) : 0;
+  const ddAbs = Math.max(0, -dd), openN = (d.positions||[]).length;
+  const lim = (t, val, max, unit, txt) => { const p = Math.min(100, max ? val/max*100 : 0);
+    return `<div class="lim"><div class="t"><span>${t}</span><b>${txt}</b></div><div class="meter"><i style="width:${p}%;background:${p>=100?"var(--down)":p>=66?"var(--wait)":"var(--ink)"}"></i></div></div>`; };
+  $("limits").innerHTML =
+    lim("Pérdida de hoy", dayLoss, L.daily_loss_limit_pct, "%", `${dayLoss.toFixed(2)}% / ${L.daily_loss_limit_pct}%`) +
+    lim("Caída desde el máximo", ddAbs, L.max_drawdown_pct, "%", `${ddAbs.toFixed(2)}% / ${L.max_drawdown_pct}%`) +
+    lim("Posiciones abiertas", openN, L.max_open_positions, "", `${openN} / ${L.max_open_positions}`) +
+    `<div class="note">Cada operación arriesga el <b>${L.risk_per_trade_pct}%</b> del capital. Si se llega al ${L.daily_loss_limit_pct}% de pérdida en el día, se para hasta mañana; si la caída llega al ${L.max_drawdown_pct}%, se para todo.</div>`;
+
+  const D = d.decisions || {}, tot = Object.values(D).reduce((a,b)=>a+b,0);
+  const fr = (t, n, col) => `<div class="fr"><div class="t"><span>${t}</span><b>${n}</b></div><div class="bar"><i style="width:${tot?Math.max(2,n/tot*100):0}%;background:${col}"></i></div></div>`;
+  $("funnel").innerHTML = fr("Alertas del Scout", tot, "#f3f3f5") + fr("Pasar ❌", D.PASAR||0, "#3a3a42") +
+    fr("Esperar ⏳", D.ESPERAR||0, "#f2b14c") + fr("Comprar ✅", (D.COMPRAR||0)+(D.VENDER||0), "#f05a28");
+  const sv = d.skeptic_saved;
+  $("saved").innerHTML = sv && sv.rejected ? `<div class="note">De ${sv.rejected} trades rechazados, <b>${sv.would_lose}</b> habrían perdido (${sgn(sv.R_avoided,1,"R")} evitados). En total, los rechazados habrían dado <b>${sgn(sv.R_all_rejected,1,"R")}</b>${sv.R_all_rejected>0?": el Skeptic está siendo demasiado estricto.":": el filtro está ahorrando dinero."}</div>` : "";
+
+  const P = d.positions || [];
+  $("posSub").textContent = P.length ? `${P.length} activa${P.length>1?"s":""}` : "Ninguna ahora mismo";
+  $("positions").innerHTML = P.length ? P.map(p => `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)">
+      <div><b>${esc(p.symbol)}</b> <span class="badge ${p.dir==="long"?"up":"down"}">${p.dir==="long"?"Largo":"Corto"}</span><div class="muted" style="font-size:12px">entrada ${px(p.entry)} · SL ${px(p.sl)} · TP ${px(p.tp)}</div></div>
+      <div style="text-align:right">${p.pnl==null?'<span class="badge waitc">esperando</span>':`<b style="color:${p.pnl>=0?"var(--up)":"var(--down)"}">${sgn(p.pnl)} $</b>`}</div></div>`).join("")
+    : '<div class="empty">El consejo está fuera del mercado.</div>';
+
+  const K = d.kills || {}, kk = Object.entries(K);
+  $("killsCard").style.display = kk.length ? "" : "none";
+  if (kk.length){
+    const mx = Math.max(...kk.map(x => x[1]));
+    $("killsTot").textContent = kk.reduce((a,x)=>a+x[1],0).toLocaleString("es-ES") + " descartes";
+    $("kills").innerHTML = kk.map(([k,n]) => `<div class="fr"><div class="t"><span>⛔ ${esc(k)}</span><b>${n.toLocaleString("es-ES")}</b></div><div class="bar" style="height:10px"><i style="width:${Math.max(2,n/mx*100)}%;background:var(--accent)"></i></div></div>`).join("");
+  }
+  const memes = d.desk === "memes";
+  document.querySelectorAll("#deskNav a").forEach(a => a.classList.toggle("on", (a.dataset.d === "memes") === memes));
+  $("wlLbl").textContent = memes ? "Red" : "Mercados vigilados";
+  if (memes) $("wallets").innerHTML = `<div class="w"><b>Solana</b><span>${(d.positions||[]).length} abiertas</span></div><div class="w"><b>Rugs</b><span>${(d.stats||{}).rugs||0} sufridos</span></div>`;
+  $("subline").textContent = (memes ? "Mesa Memecoins · Solana · " : "Mesa Cripto · " + (d.symbols||[]).join(", ") + " · " + d.timeframe + " · ") +
+    (d.source === "live" ? `actualizado ${ago(d.updated)}` : `backtest ${d.period || ""}`);
+  drawTable();
+}
+
+function drawTable(){
+  const q = $("q").value.trim().toUpperCase();
+  const T = (DATA.trades || []).filter(t => !q || t.symbol.includes(q));
+  $("tbody").innerHTML = T.length ? T.map(t => `<tr><td><b>${esc(t.symbol)}</b></td>
+    <td><span class="badge ${t.dir==="long"?"up":"down"}">${t.dir==="long"?"Largo":"Corto"}</span></td>
+    <td>${px(t.entry)}</td><td>${px(t.exit)}</td>
+    <td style="color:${t.pnl>=0?"var(--up)":"var(--down)"};font-weight:600">${sgn(t.pnl)} $</td>
+    <td>${sgn(t.R,2,"R")}</td><td>${esc(t.reason)}</td><td class="muted">${esc(String(t.closed).replace("T"," ").slice(0,16))}</td></tr>`).join("")
+    : `<tr><td colspan="8" class="empty">Sin operaciones todavía.</td></tr>`;
+}
+$("q").addEventListener("input", () => DATA && drawTable());
+document.querySelectorAll("nav.pills a").forEach(a => a.addEventListener("click", () => {
+  document.querySelectorAll("nav.pills a").forEach(x => x.classList.remove("on")); a.classList.add("on"); }));
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => DATA && render(DATA), 150); });
+
+async function load(){
+  const src = new URLSearchParams(location.search).get("fuente") || "";
+  const mesa = location.hash === "#memes" ? "memes" : "cripto";
+  try {
+    const r = await fetch("data?mesa=" + mesa + (src ? "&fuente=" + encodeURIComponent(src) : ""), {cache:"no-store"});
+    if (!r.ok) throw 0;
+    isDemo = false; render(await r.json());
+  } catch (e) {
+    if (typeof DEMO !== "undefined"){ isDemo = true; render(mesa === "memes" && typeof DEMO_MEMES !== "undefined" ? DEMO_MEMES : DEMO); }
+    else $("subline").textContent = "No encuentro datos. Arranca el panel con: python dashboard_server.py";
+  }
+}
+addEventListener("hashchange", () => { if (location.hash === "#memes" || location.hash === "#cripto") load(); });
+load(); setInterval(() => { if (!isDemo && DATA && DATA.source === "live") load(); }, 20000);
+</script>
+</body>
+</html>
