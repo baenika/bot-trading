@@ -21,5 +21,7 @@ Bot de trading multi-agente ("el Consejo") de David. Toda la documentación y lo
 
 - Tests: `python -m pytest -q`
 - Backtest con datos sintéticos: `python run_backtest.py`
-- Backtest con CSV real: `python run_backtest.py --csv datos/BTCUSDT-1h.csv --csv datos/ETHUSDT-1h.csv`
+- Datos reales (públicos): `python descargar_datos.py todo`
+- Backtest por mesa: `python run_backtest.py --mesa cripto` o `--mesa mercados`
+- Las mesas y sus símbolos están en `consejo/mesas.py`
 - Panel: `python dashboard_server.py` y abrir http://localhost:8000

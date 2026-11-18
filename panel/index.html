@@ -140,7 +140,7 @@
         <a href="#riesgo">Riesgo</a><a href="#ops">Operaciones</a>
       </nav>
       <div class="right">
-        <nav class="pills desk" id="deskNav"><a href="#cripto" data-d="cripto">Cripto</a><a href="#memes" data-d="memes">🪙 Memes</a></nav>
+        <nav class="pills desk" id="deskNav"><a href="#cripto" data-d="cripto">Cripto</a><a href="#mercados" data-d="mercados">📊 Mercados</a><a href="#memes" data-d="memes">🪙 Memes</a></nav>
         <span class="chip" id="srcChip"><span class="dot" id="srcDot"></span><span id="srcTxt">—</span></span>
         <span class="chip hide-m" id="modeChip">PAPER</span>
         <div class="avatar">DB</div>
@@ -424,10 +424,10 @@ function render(d){
     $("kills").innerHTML = kk.map(([k,n]) => `<div class="fr"><div class="t"><span>⛔ ${esc(k)}</span><b>${n.toLocaleString("es-ES")}</b></div><div class="bar" style="height:10px"><i style="width:${Math.max(2,n/mx*100)}%;background:var(--accent)"></i></div></div>`).join("");
   }
   const memes = d.desk === "memes";
-  document.querySelectorAll("#deskNav a").forEach(a => a.classList.toggle("on", (a.dataset.d === "memes") === memes));
+  document.querySelectorAll("#deskNav a").forEach(a => a.classList.toggle("on", a.dataset.d === (d.desk || "cripto")));
   $("wlLbl").textContent = memes ? "Red" : "Mercados vigilados";
   if (memes) $("wallets").innerHTML = `<div class="w"><b>Solana</b><span>${(d.positions||[]).length} abiertas</span></div><div class="w"><b>Rugs</b><span>${(d.stats||{}).rugs||0} sufridos</span></div>`;
-  $("subline").textContent = (memes ? "Mesa Memecoins · Solana · " : "Mesa Cripto · " + (d.symbols||[]).join(", ") + " · " + d.timeframe + " · ") +
+  $("subline").textContent = (memes ? "Mesa Memecoins · Solana · " : (d.desk === "mercados" ? "Mesa Mercados · " : "Mesa Cripto · ") + (d.symbols||[]).join(", ") + " · " + d.timeframe + " · ") +
     (d.source === "live" ? `actualizado ${ago(d.updated)}` : `backtest ${d.period || ""}`);
   drawTable();
 }
@@ -449,17 +449,18 @@ let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() 
 
 async function load(){
   const src = new URLSearchParams(location.search).get("fuente") || "";
-  const mesa = location.hash === "#memes" ? "memes" : "cripto";
+  const mesa = location.hash === "#memes" ? "memes" : location.hash === "#mercados" ? "mercados" : "cripto";
   try {
     const r = await fetch("data?mesa=" + mesa + (src ? "&fuente=" + encodeURIComponent(src) : ""), {cache:"no-store"});
     if (!r.ok) throw 0;
     isDemo = false; render(await r.json());
   } catch (e) {
+    if (mesa === "mercados"){ isDemo = true; DATA = null; $("subline").textContent = "Mesa Mercados: todavía sin datos. Corre python descargar_datos.py mercados y luego python run_backtest.py --mesa mercados"; return; }
     if (typeof DEMO !== "undefined"){ isDemo = true; render(mesa === "memes" && typeof DEMO_MEMES !== "undefined" ? DEMO_MEMES : DEMO); }
     else $("subline").textContent = "No encuentro datos. Arranca el panel con: python dashboard_server.py";
   }
 }
-addEventListener("hashchange", () => { if (location.hash === "#memes" || location.hash === "#cripto") load(); });
+addEventListener("hashchange", () => { if (["#memes", "#cripto", "#mercados"].includes(location.hash)) load(); });
 load(); setInterval(() => { if (!isDemo && DATA && DATA.source === "live") load(); }, 20000);
 </script>
 </body>

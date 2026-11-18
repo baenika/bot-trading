@@ -1,6 +1,6 @@
 """Sirve el panel del Consejo en http://localhost:8000 (solo en tu ordenador).
 
-El panel pide `data?mesa=cripto` o `data?mesa=memes` y este servidor le
+El panel pide `data?mesa=cripto`, `data?mesa=mercados` o `data?mesa=memes` y este servidor le
 devuelve `salida/estado_<mesa>.json`. Si no existe, el panel enseña sus
 datos de demostración.
 """
@@ -25,7 +25,7 @@ class Manejador(http.server.SimpleHTTPRequestHandler):
         if url.path.rstrip("/").endswith("/data") or url.path == "/data":
             q = urllib.parse.parse_qs(url.query)
             mesa = q.get("mesa", ["cripto"])[0]
-            if mesa not in ("cripto", "memes"):
+            if mesa not in ("cripto", "mercados", "memes"):
                 return self.send_error(400, "mesa desconocida")
             ruta = os.path.join(RAIZ, "salida", f"estado_{mesa}.json")
             if not os.path.exists(ruta):

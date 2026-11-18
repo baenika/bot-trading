@@ -140,3 +140,33 @@ def test_sin_cortos_por_defecto():
     series = {"BTCUSDT": datos.sinteticas("BTCUSDT", 2000, 30000, semilla=7)}
     d = backtest.ejecutar(series, {"caminos_backtest": 100, "caminos_ultima": 100})
     assert all(o["dir"] == "long" for o in d["trades"])
+
+
+# --- mesa de mercados ---------------------------------------------------------
+
+def test_nombres_de_archivo_ida_y_vuelta():
+    from consejo import mesas
+    for s in list(mesas.MERCADOS) + list(mesas.CRIPTO):
+        nombre = mesas.archivo(s)
+        assert "^" not in nombre and "=" not in nombre
+        assert mesas.simbolo_de_archivo("datos/" + nombre) == s
+
+
+def test_yahoo_a_filas_salta_huecos():
+    import descargar_datos
+    js = {"chart": {"result": [{"timestamp": [1704067200, 1704070800, 1704074400],
+                                "indicators": {"quote": [{"open": [1, None, 3], "high": [2, None, 4],
+                                                          "low": [0.5, None, 2.5], "close": [1.5, None, 3.5],
+                                                          "volume": [10, None, None]}]}}]}}
+    filas = descargar_datos.yahoo_a_filas(js)
+    assert len(filas) == 2 and filas[1][5] == 0
+    assert filas[0][0].startswith("2024-01-01T00:00")
+
+
+def test_run_backtest_mesa_mercados(tmp_path):
+    import run_backtest
+    salida = tmp_path / "m.json"
+    assert run_backtest.main(["--mesa", "mercados", "--sinteticos", "--velas", "800",
+                              "--salida", str(salida)]) == 0
+    d = json.loads(salida.read_text())
+    assert d["desk"] == "mercados" and d["mode"] == "paper"

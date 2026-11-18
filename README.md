@@ -13,6 +13,16 @@ Bot de trading multi-agente de David. Seis bots discuten cada oportunidad y el S
 
 La **máquina del tiempo** (idea de [day-trader-skill](https://github.com/Jakeschincariol/day-trader-skill), MIT) repite cada plan miles de veces con rendimientos pasados del activo y cuenta cuántas veces llega antes al objetivo que al stop.
 
+## Mesas
+
+| Mesa | Qué vigila | Datos |
+| --- | --- | --- |
+| Cripto | BTC y ETH | data.binance.vision, velas de 1 h desde 2024 |
+| Mercados | S&P 500 (SPY), Nasdaq 100 (QQQ), Dow Jones (DIA), Russell 2000 (IWM), oro (GLD), plata (SLV), petróleo (USO), bonos EE. UU. (TLT), EUR/USD, IBEX 35 y DAX | Yahoo Finance, velas de 1 h de los últimos ~2 años |
+| Memes | Memecoins de Solana | pendiente, solo en paper |
+
+La lista de la mesa de mercados está en `consejo/mesas.py`: añade o quita símbolos de Yahoo ahí.
+
 ## Cómo usarlo
 
 Necesitas Python 3.10 o superior. No hace falta instalar nada más, salvo `pytest` para los tests.
@@ -22,10 +32,12 @@ python run_backtest.py          # prueba con datos sintéticos
 python dashboard_server.py      # abre http://localhost:8000
 ```
 
-Con datos reales (velas de 1 hora de [data.binance.vision](https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1h/), descargadas a mano):
+Con datos reales (precios públicos, sin cuentas ni claves):
 
 ```bash
-python run_backtest.py --csv datos/BTCUSDT-1h.csv --csv datos/ETHUSDT-1h.csv
+python descargar_datos.py todo            # baja cripto y mercados a datos/
+python run_backtest.py --mesa cripto
+python run_backtest.py --mesa mercados
 ```
 
 Los ajustes están en `config.example.json`. Cópialo y pásalo con `--config mi_config.json`.
