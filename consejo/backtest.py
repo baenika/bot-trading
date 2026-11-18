@@ -217,6 +217,7 @@ class Motor:
     def correr(self) -> "Motor":
         eventos = sorted((v.t, s, i) for s, c in self.ctx.items() for i, v in enumerate(c.velas))
         ultimo_t = eventos[-1][0] if eventos else None
+        ultimo_i: dict[str, int] = {}
         for n, (t, s, i) in enumerate(eventos):
             dia = t.date()
             if dia != self.dia:
@@ -225,7 +226,14 @@ class Motor:
             self._pendiente(s, i)
             self._consejo(s, i, ultima_vela=(t == ultimo_t))
             self.pico = max(self.pico, self.capital)
-            self.riesgo.revisar_cuenta(self.capital, self.pico)
+            ultimo_i[s] = i
+            if not self.riesgo.parado:
+                self.riesgo.revisar_cuenta(self.capital, self.pico)
+                if self.riesgo.parado:  # corte de drawdown: se cierra todo y se anula lo pendiente
+                    self.pendientes.clear()
+                    for sim in list(self.abiertas):
+                        v = self.ctx[sim].velas[ultimo_i.get(sim, i)]
+                        self._cerrar(sim, v.c, "corte de drawdown", v.t)
             if n % (10 * len(self.ctx)) == 0 or t == ultimo_t:
                 self.curva.append((_fmt(t), round(self.capital, 2)))
         return self

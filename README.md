@@ -25,7 +25,7 @@ La lista de la mesa de mercados está en `consejo/mesas.py`: añade o quita sím
 
 ## Cómo usarlo
 
-Necesitas Python 3.10 o superior. No hace falta instalar nada más, salvo `pytest` para los tests.
+Necesitas Python 3.10 o superior. En Windows, usa `py` en vez de `python` (por ejemplo `py run_backtest.py`). No hace falta instalar nada más, salvo `pytest` para los tests.
 
 ```bash
 python run_backtest.py          # prueba con datos sintéticos

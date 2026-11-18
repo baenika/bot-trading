@@ -131,7 +131,7 @@ def test_backtest_produce_json_del_panel():
     assert d["mode"] == "paper"
     json.dumps(d, default=str)
     for o in d["trades"]:
-        assert o["reason"] in ("stop loss", "take profit", "tiempo máximo")
+        assert o["reason"] in ("stop loss", "take profit", "tiempo máximo", "corte de drawdown")
     # nunca arriesga más de lo permitido: ninguna pérdida mucho mayor que 1R
     assert all(o["R"] > -1.6 for o in d["trades"])
 
@@ -168,5 +168,15 @@ def test_run_backtest_mesa_mercados(tmp_path):
     salida = tmp_path / "m.json"
     assert run_backtest.main(["--mesa", "mercados", "--sinteticos", "--velas", "800",
                               "--salida", str(salida)]) == 0
-    d = json.loads(salida.read_text())
+    d = json.loads(salida.read_text(encoding="utf-8"))
     assert d["desk"] == "mercados" and d["mode"] == "paper"
+
+
+def test_corte_de_drawdown_cierra_todo():
+    series = {"BTCUSDT": datos.sinteticas("BTCUSDT", 3000, 30000, semilla=4),
+              "ETHUSDT": datos.sinteticas("ETHUSDT", 3000, 2000, semilla=5)}
+    m = backtest.Motor(series, {"max_drawdown_pct": 2.0, "caminos_backtest": 50, "caminos_ultima": 50},
+                       con_skeptic=False).correr()
+    if m.riesgo.parado:
+        assert not m.abiertas
+        assert m.estadisticas()["max_dd_pct"] > -4.0
