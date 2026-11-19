@@ -413,3 +413,57 @@ def test_pausa_por_racha_no_es_eterna():
             break
     # tras 24 h y en cuanto llega una alerta, la racha se reinicia
     assert m.racha == 0 or all(scout.escanear(m.ctx["BTCUSDT"], k, m.cfg) is None for k in range(125, 600))
+
+
+# --- estrategia de las 9:30 (reel 13) ------------------------------------------------
+
+def test_apertura_ny_horario_verano():
+    from datetime import date
+    from consejo.estrategias import orb
+    assert orb.apertura_ny_utc(date(2026, 7, 1)).hour == 13
+    assert orb.apertura_ny_utc(date(2026, 1, 15)).hour == 14
+    assert orb.apertura_ny_utc(date(2026, 11, 2)).hour == 14     # el 1 de noviembre de 2026 es domingo
+
+
+def _dia_orb(precios):
+    """precios: lista de (o, h, l, c) de velas de 5 min desde las 9:30 NY de un miércoles de enero."""
+    from datetime import date
+    from consejo.estrategias import orb
+    t0 = orb.apertura_ny_utc(date(2026, 1, 14))
+    return [datos.Vela(t0 + timedelta(minutes=5 * k), o, h, l, c, 1000) for k, (o, h, l, c) in enumerate(precios)]
+
+
+def test_orb_order_block_y_objetivo():
+    from datetime import date
+    from consejo.estrategias import orb
+    p = [(100, 101, 99.5, 100.5), (100.5, 100.8, 99.8, 100.0), (100, 100.9, 99.6, 99.9),  # rango 99.5-101
+         (99.9, 100.6, 99.7, 99.8),      # vela bajista: order block (máx 100.6, mín 99.7)
+         (99.8, 101.6, 99.8, 101.4),     # cierra por encima de 101: ruptura
+         (101.4, 101.5, 100.5, 100.7),   # vuelve y toca 100.6: entra
+         (100.7, 102.6, 100.7, 102.5)]   # objetivo = 100.6 + 2*0.9 = 102.4
+    p += [(102.5, 102.6, 102.4, 102.5)] * 70
+    op, que = orb.operar_dia("SPY", _dia_orb(p), date(2026, 1, 14), {**orb.CONFIG_ORB, "comision_pct": 0})
+    assert que == "operación" and op.motivo == "objetivo"
+    assert op.entrada == pytest.approx(100.6) and op.stop == pytest.approx(99.7)
+    assert op.R == pytest.approx(2.0)
+
+
+def test_orb_stop_primero_y_sin_ruptura():
+    from datetime import date
+    from consejo.estrategias import orb
+    base = [(100, 101, 99.5, 100.5), (100.5, 100.8, 99.8, 100.0), (100, 100.9, 99.6, 99.9),
+            (99.9, 100.6, 99.7, 99.8), (99.8, 101.6, 99.8, 101.4),
+            (101.4, 101.5, 99.0, 99.2)]          # toca la entrada y el stop en la misma vela
+    op, _ = orb.operar_dia("SPY", _dia_orb(base + [(99.2, 99.3, 99.1, 99.2)] * 70), date(2026, 1, 14),
+                           {**orb.CONFIG_ORB, "comision_pct": 0, "deslizamiento_pct": 0})
+    assert op.motivo == "stop" and op.R == pytest.approx(-1.0)
+    plano = [(100, 101, 99.5, 100.5)] * 78
+    assert orb.operar_dia("SPY", _dia_orb(plano), date(2026, 1, 14), orb.CONFIG_ORB)[0] is None
+
+
+def test_kronos_probabilidad_sin_modelo():
+    from consejo import kronos_opinion as k
+    caminos = [[(105, 99, 104)], [(101, 94, 95)], [(110, 94, 100)], [(101, 99, 100)]]
+    r = k.probabilidad(caminos, stop=95, objetivo=104, dir_="long")
+    assert (r["p_tp"], r["p_sl"], r["p_none"]) == (25.0, 50.0, 25.0)
+    assert k.cargar("") is None

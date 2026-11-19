@@ -53,6 +53,20 @@ Para que los 6 bots hablen en un grupo de Telegram, crea `telegram.json` junto a
 
 Prueba los bots con `py papel.py --prueba-telegram`. Sin ese archivo, la conversación sale por la consola. Los bots solo envían mensajes: no hay órdenes ni dinero.
 
+## Estrategia de las 9:30 de Nueva York (SPY y QQQ)
+
+Del reel 13: rango de la primera vela de 15 min, ruptura con cierre de 5 min por encima y entrada en el retroceso al order block. Con velas reales de 5 min de Yahoo:
+
+```bash
+py orb.py actualizar    # guarda las velas de 5 min (Yahoo da 60 días; se van acumulando)
+py orb.py informe       # informe semanal y comparación de variantes en salida/orb_informe_<fecha>.md
+py orb.py diario        # las dos cosas; para lanzarlo cada día después del cierre de Wall Street
+```
+
+## Kronos (opcional)
+
+Segunda opinión sobre cada plan (reel 10): un modelo que dibuja futuros posibles. Igual que la máquina del tiempo, solo vota si la calibración demuestra que acierta. Necesita PyTorch y el repo clonado; se activa con `"kronos_ruta": "C:/ruta/a/Kronos"` en la config.
+
 ## Examen antes de pensar en dinero real
 
 El backtest lo comprueba solo: 100 operaciones o más, profit factor mayor de 1,3, drawdown menor del 20 % y ganar a comprar y mantener. Además tiene que funcionar en varias épocas y activos, y aguantar varias semanas en papel. Aun así, el dinero real solo se activa si David lo pide por escrito.

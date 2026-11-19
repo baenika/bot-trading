@@ -105,6 +105,10 @@ def main(argv=None) -> int:
     print("Examen antes de pensar en dinero real (además: varias épocas y activos, y semanas en papel):")
     for c in estado["exam"]:
         print(f"  {'✅' if c['ok'] else '❌'} {c['criterio']}: {c['valor']}")
+    ck = estado.get("calibration_kronos")
+    if ck and ck["n"]:
+        print(f"Kronos: {ck['n']} casos, error de calibración {ck['error_pts']} puntos "
+              f"→ {'puede votar en el Skeptic' if ck['usable'] else 'solo informativo'}")
     cal = estado["calibration"]
     if cal["n"]:
         print(f"Máquina del tiempo: {cal['n']} casos, error de calibración {cal['error_pts']} puntos "

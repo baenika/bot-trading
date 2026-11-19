@@ -52,6 +52,10 @@ CONFIG_DEFECTO = {
     "ventana_noticias_h": 24,
     "calibracion_max_error": 7.0,
     "calibracion_min_casos": 200,
+    "kronos_ruta": "",            # carpeta del repo de Kronos; vacío = sin Kronos
+    "kronos_modelo": "NeoQuasar/Kronos-small",
+    "kronos_caminos": 10,
+    "kronos_max": 400,            # en backtest, a cuántas alertas como mucho se le pregunta (es lento)
 }
 
 
@@ -172,6 +176,12 @@ class Motor:
         self.ultima: dict | None = None
         self.noticias = noticias or {}
         self.calibracion = Calibracion()
+        self.calibracion_kronos = Calibracion()
+        self.kronos = None
+        self.n_kronos = 0
+        if self.cfg.get("kronos_ruta"):
+            from . import kronos_opinion
+            self.kronos = kronos_opinion.cargar(self.cfg["kronos_ruta"], self.cfg["kronos_modelo"])
         self.duracion = _duracion(self.cfg["timeframe"])
         self.ultimo_i: dict[str, int] = {}
 
@@ -282,8 +292,26 @@ class Motor:
         calibrada = (err is not None and err < cfg["calibracion_max_error"]
                      and self.calibracion.n >= cfg["calibracion_min_casos"])
 
+        # Kronos: segunda opinión, con su propia calibración (solo vota si demuestra que acierta)
+        kron, kron_ok = {}, False
+        if self.kronos is not None and self.n_kronos < cfg["kronos_max"]:
+            from . import kronos_opinion
+            self.n_kronos += 1
+            kron = kronos_opinion.probabilidad(
+                kronos_opinion.futuros(self.kronos, ctx.velas[:i + 1], self.duracion, cfg["max_barras"],
+                                       cfg["kronos_caminos"]), plan.stop, plan.objetivo, plan.dir)
+            kron["breakeven"] = sim.get("breakeven", 100 / (1 + plan.rr))
+            self.calibracion_kronos.avanzar(cierre)
+            if ok is not None:
+                self.calibracion_kronos.anotar(ctx.velas[i + cfg["max_barras"]].t + self.duracion, kron["p_tp"], ok)
+            ek = self.calibracion_kronos.error()
+            kron_ok = (ek is not None and ek < cfg["calibracion_max_error"]
+                       and self.calibracion_kronos.n >= cfg["calibracion_min_casos"])
+            senti["texto"] += (f"\n🤖 Kronos ({'calibrado' if kron_ok else 'solo informativo'}): en {kron['paths']} "
+                               f"futuros toca el objetivo primero el {kron['p_tp']:.0f}% y el stop el {kron['p_sl']:.0f}%.")
+
         if self.con_skeptic:
-            dec = skeptic.decidir(ctx, alerta, plan, senti, estudio, sim, noticias, cfg, calibrada)
+            dec = skeptic.decidir(ctx, alerta, plan, senti, estudio, sim, noticias, cfg, calibrada, kron, kron_ok)
         else:  # comparación: entra en todo lo que permite la config
             veto = alerta.dir == "short" and not cfg["permitir_cortos"]
             d = "PASAR" if veto else ("COMPRAR" if alerta.dir == "long" else "VENDER")
@@ -318,7 +346,7 @@ class Motor:
                        "pros": dec["pros"], "cons": dec["cons"], "vetoes": dec["vetoes"], "dir": alerta.dir,
                        "entry": plan.entrada, "sl": plan.stop, "tp": plan.objetivo,
                        "wait_price": plan.precio_espera if dec["decision"] == "ESPERAR" else None,
-                       "temperature": senti["temperatura"], "sim": sim}
+                       "temperature": senti["temperatura"], "sim": sim, "kronos": kron or None}
 
     # --- bucle principal ------------------------------------------------------
     def paso(self, s: str, i: int, ultima_vela: bool = False) -> None:
@@ -500,6 +528,8 @@ def estado_panel(m: "Motor", series: dict, fuente: str, periodo: str | None, sin
         "decisions": dict(m.decisiones),
         "veto_counts": dict(m.vetos.most_common(14)),
         "score_counts": {str(k): v for k, v in sorted(m.puntos.items())},
+        "calibration_kronos": m.calibracion_kronos.resumen(m.cfg["calibracion_max_error"], m.cfg["calibracion_min_casos"])
+        if m.kronos is not None else None,
         "exam": examen(st, _comprar_y_mantener(series)),
         "calibration": m.calibracion.resumen(m.cfg["calibracion_max_error"], m.cfg["calibracion_min_casos"]),
         "news_coverage": {s: len(a.titulares) for s, a in (noticias or {}).items()},

@@ -6,7 +6,7 @@ COMPRAR, VENDER, ESPERAR, PASAR = "COMPRAR", "VENDER", "ESPERAR", "PASAR"
 
 
 def decidir(ctx, alerta, plan, sentimental: dict, estudio: dict, sim: dict, noticias: dict,
-            cfg: dict, calibrada: bool = False) -> dict:
+            cfg: dict, calibrada: bool = False, kronos: dict | None = None, kronos_calibrado: bool = False) -> dict:
     i = alerta.i
     pros, contras, vetos = [], [], []
     puntos = 0.0
@@ -42,6 +42,14 @@ def decidir(ctx, alerta, plan, sentimental: dict, estudio: dict, sim: dict, noti
         elif margen < 0:
             contras.append(f"la máquina del tiempo (calibrada) da solo {sim['p_tp']:.0f}% al objetivo "
                            f"(hace falta {sim['breakeven']:.0f}%)")
+            puntos -= 1
+    if kronos and kronos.get("paths") and kronos_calibrado:
+        margen = kronos["p_tp"] - kronos["breakeven"]
+        if margen >= 5:
+            pros.append(f"Kronos (calibrado) da {kronos['p_tp']:.0f}% al objetivo")
+            puntos += 1
+        elif margen < 0:
+            contras.append(f"Kronos (calibrado) da solo {kronos['p_tp']:.0f}% al objetivo")
             puntos -= 1
     if noticias.get("pro"):
         pros.append(f"News: {noticias['pro']}")
