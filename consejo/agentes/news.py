@@ -167,7 +167,10 @@ def opinar(alerta, ctx=None, archivo: Archivo | None = None, cierre: datetime | 
         res["veto"] = f"noticia grave en las últimas 24 h: «{graves[-1][:90]}»"
     elif res["moving"] or alerta.fuerza >= 70:
         if not tit:
-            res["contra"] = "el precio se mueve fuerte pero no hay ninguna noticia detrás: puede ser ruido"
+            # "sin noticias" solo cuenta si el archivo es denso esa semana; si no, el hueco
+            # puede ser del archivo y no del mercado
+            if len(archivo.antes_de(cierre, 24 * 7)) >= cfg.get("densidad_minima_semana", 50):
+                res["contra"] = "el precio se mueve fuerte pero no hay ninguna noticia detrás: puede ser ruido"
         elif tono * lado > 0:
             res["pro"] = f"hay noticias detrás y van a favor ({', '.join(etiquetas) or 'sin etiqueta'})"
         elif tono * lado < 0:
