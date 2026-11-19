@@ -113,8 +113,9 @@ def informe(series: dict, hoy: datetime | None = None) -> str:
     mejor = max(reales.items(), key=lambda x: x[1]["R_total"])
     con_ventaja = [k for k, v in reales.items() if v["n"] >= 30 and v["pf"] > 1.1]
     if st0["n"] >= 30 and not con_ventaja:
-        lineas.append(f"Con {st0['n']} operaciones, la estrategia NO tiene ventaja: pierde en todas las variantes "
-                      f"(la del vídeo, profit factor {st0['pf']:.2f}). No la usaría para operar. Sigo acumulando "
+        lineas.append(f"Con {st0['n']} operaciones, la estrategia NO tiene ventaja: ninguna variante llega a "
+                      f"profit factor 1,1 (la del vídeo, {st0['pf']:.2f}; la mejor, «{mejor[0]}», "
+                      f"{mejor[1]['pf']:.2f} y {mejor[1]['R_total']:+.1f} R). No la usaría para operar. Sigo acumulando "
                       "días por si cambia, pero no apostaría por ella.")
         sc = resultados["sin costes (solo para ver cuánto pesan)"]
         if sc["pf"] > 1:
