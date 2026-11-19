@@ -158,6 +158,12 @@ def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str) -> None:
         json.dump({**m.exportar(), "inicio": inicio}, f, ensure_ascii=False, default=str)
     panel = backtest.estado_panel(m, series, "live", f"papel desde {inicio[:16].replace('T', ' ')}")
     panel["desk"] = mesa
+    # comprar y mantener desde que arrancó el papel, no desde el principio de las velas bajadas
+    t0 = datetime.fromisoformat(inicio)
+    desde = {k: [v for v in vs if v.t >= t0] for k, vs in series.items()}
+    bh = backtest._comprar_y_mantener({k: v for k, v in desde.items() if len(v) > 1})
+    panel["skeptic_saved"]["buy_hold_pct"] = bh
+    panel["exam"] = backtest.examen(m.estadisticas(), bh)
     with open(os.path.join(RAIZ, "salida", f"estado_papel_{mesa}.json"), "w", encoding="utf-8") as f:
         json.dump(panel, f, ensure_ascii=False, default=str)
     print(f"{ahora:%H:%M} · {len(eventos)} velas nuevas · capital ficticio {m.capital:,.2f} · "
