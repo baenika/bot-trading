@@ -12,6 +12,7 @@ Reglas de ejecución (conservadoras a propósito):
 from __future__ import annotations
 
 import math
+import re
 from collections import Counter
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
@@ -159,6 +160,8 @@ class Motor:
         self.curva: list[tuple[str, float]] = []
         self.pnl_diario: Counter = Counter()
         self.decisiones: Counter = Counter()
+        self.vetos: Counter = Counter()          # por qué veta el Skeptic (para ajustar sin adivinar)
+        self.puntos: Counter = Counter()         # puntuación de las alertas sin veto
         self.casos: dict[str, list[dict]] = {s: [] for s in series}
         self.rechazadas: list[float] = []
         self.racha = 0
@@ -276,6 +279,10 @@ class Motor:
             d = "PASAR" if veto else ("COMPRAR" if alerta.dir == "long" else "VENDER")
             dec = {"decision": d, "score": 0, "pros": [], "cons": [], "vetoes": [], "texto": d}
         self.decisiones[dec["decision"]] += 1
+        for v in dec["vetoes"]:
+            self.vetos[re.sub(r"[\d.,]+", "N", v.split(": ")[0])[:60]] += 1
+        if not dec["vetoes"]:
+            self.puntos[round(dec["score"])] += 1
 
         if dec["decision"] in ("COMPRAR", "VENDER"):
             self.pendientes[s] = {"tipo": "mercado", "plan": plan, "i": i, "t_i": ctx.velas[i].t.isoformat()}
@@ -475,6 +482,8 @@ def estado_panel(m: "Motor", series: dict, fuente: str, periodo: str | None, sin
         "bots": m.bots,
         "last_decision": m.ultima,
         "decisions": dict(m.decisiones),
+        "veto_counts": dict(m.vetos.most_common(10)),
+        "score_counts": {str(k): v for k, v in sorted(m.puntos.items())},
         "exam": examen(st, _comprar_y_mantener(series)),
         "calibration": m.calibracion.resumen(m.cfg["calibracion_max_error"], m.cfg["calibracion_min_casos"]),
         "news_coverage": {s: len(a.titulares) for s, a in (noticias or {}).items()},

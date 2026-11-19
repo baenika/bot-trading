@@ -98,6 +98,10 @@ def main(argv=None) -> int:
     print(f"Sin Skeptic : {sc['trades']} operaciones · {sc['rentabilidad_%']:+.1f}% · drawdown "
           f"{sc['max_drawdown_%']:.1f}% · acierto {sc['acierto_%']:.0f}%")
     print(f"Comprar y mantener (media): {estado['skeptic_saved']['buy_hold_pct']:+.1f}%")
+    print(f"Decisiones del Skeptic: {estado['decisions']}")
+    print("Vetos más frecuentes: " + "; ".join(f"{k} ({v})" for k, v in estado["veto_counts"].items()))
+    print(f"Puntuación de las alertas sin veto (necesita {cfg.get('puntos_para_entrar', 2)} para entrar): "
+          + ", ".join(f"{k}: {v}" for k, v in estado["score_counts"].items()))
     print("Examen antes de pensar en dinero real (además: varias épocas y activos, y semanas en papel):")
     for c in estado["exam"]:
         print(f"  {'✅' if c['ok'] else '❌'} {c['criterio']}: {c['valor']}")
