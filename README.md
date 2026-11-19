@@ -19,7 +19,7 @@ La **máquina del tiempo** (idea de [day-trader-skill](https://github.com/Jakesc
 | --- | --- | --- |
 | Cripto | BTC y ETH | data.binance.vision, velas de 1 h desde 2024 |
 | Mercados | S&P 500 (SPY), Nasdaq 100 (QQQ), Dow Jones (DIA), Russell 2000 (IWM), oro (GLD), plata (SLV), petróleo (USO), bonos EE. UU. (TLT), EUR/USD, IBEX 35 y DAX | Yahoo Finance, velas de 1 h de los últimos ~2 años |
-| Memes | Memecoins de Solana | pendiente, solo en paper |
+| Memes | Memecoins de Solana | DexScreener y RugCheck (públicos). Se graba el mercado real con `py memes.py grabar` y se hace el backtest sobre lo grabado con `py memes.py backtest --grid` |
 
 La lista de la mesa de mercados está en `consejo/mesas.py`: añade o quita símbolos de Yahoo ahí.
 

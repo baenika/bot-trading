@@ -327,3 +327,48 @@ def test_papel_quita_vela_abierta():
     vs = datos.sinteticas("X", 5, semilla=1)
     ahora = vs[-1].t + timedelta(minutes=30)
     assert papel.solo_cerradas(vs, timedelta(hours=1), ahora) == vs[:-1]
+
+
+# --- mesa memecoins (backtest sobre una grabación) ------------------------------------
+
+def _grabacion_de_prueba(carpeta):
+    import random
+    rnd = random.Random(1)
+    t0 = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    seg = {"mint_revoked": True, "freeze_revoked": True, "lp_locked_pct": 100, "top10_pct": 15,
+           "dev_pct": 1, "bundled_pct": None, "rug_score": None, "risks": [], "rugged": False}
+    precios = {f"M{k}": 0.001 for k in range(6)}
+    with open(os.path.join(carpeta, "2026-11-01.jsonl"), "w", encoding="utf-8") as f:
+        for n in range(60):
+            ts = (t0 + timedelta(minutes=5 * n)).isoformat()
+            for m in list(precios):
+                if m == "M0" and n == 30:                 # rug: el par desaparece
+                    f.write(json.dumps({"ts": ts, "gone": m}) + "\n")
+                    del precios[m]
+                    continue
+                precios[m] *= 1 + rnd.gauss(0.01, 0.03)
+                c = {"mint": m, "symbol": m, "price": precios[m], "liq": 200000, "mcap": precios[m] * 1e9,
+                     "vol_m5": 30000, "vol_h1": 300000, "buys_m5": 30, "sells_m5": 15, "buys_h1": 600,
+                     "sells_h1": 250, "chg_m5": 2, "chg_h1": 20, "chg_h6": 40, "age_min": 120 + 5 * n,
+                     "socials": 2}
+                f.write(json.dumps({"ts": ts, "c": c, "s": seg}) + "\n")
+
+
+def test_memes_backtest_sobre_grabacion(tmp_path, monkeypatch):
+    import memes
+    _grabacion_de_prueba(tmp_path)
+    tandas = memes.cargar_grabacion(str(tmp_path))
+    assert len(tandas) == 60
+    eng = memes.correr(tandas, {})
+    s = eng.stats()
+    assert s["trades"] >= 1
+    assert all(t["pnl"] > -eng.broker.start for t in eng.broker.trades)
+    monkeypatch.setattr(memes, "RAIZ", str(tmp_path))
+    assert memes.main(["backtest", "--carpeta", str(tmp_path)]) == 0
+    snap = json.loads((tmp_path / "salida" / "estado_memes.json").read_text(encoding="utf-8"))
+    assert snap["desk"] == "memes" and snap["mode"] == "paper"
+
+
+def test_memes_sin_grabacion_no_inventa(tmp_path):
+    import memes
+    assert memes.main(["backtest", "--carpeta", str(tmp_path)]) == 1
