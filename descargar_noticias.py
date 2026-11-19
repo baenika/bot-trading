@@ -188,7 +188,7 @@ HN_API = "https://hn.algolia.com/api/v1/search_by_date"
 HN_CONSULTAS = {
     "BTCUSDT": ["bitcoin", "btc"], "ETHUSDT": ["ethereum"],
     "SPY": ["S&P 500", "stock market"], "QQQ": ["nasdaq", "tech stocks"], "DIA": ["dow jones"],
-    "IWM": ["russell 2000"], "GLD": ["gold price"], "SLV": ["silver price"], "USO": ["oil price"],
+    "IWM": ["russell 2000"], "GLD": ["gold price"], "GC=F": ["gold price", "gold futures"], "SLV": ["silver price"], "USO": ["oil price"],
     "TLT": ["treasury yields", "federal reserve"],
     "EURUSD=X": ["ecb", "eurozone", "euro exchange rate", "lagarde"],
 }

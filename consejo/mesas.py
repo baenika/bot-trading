@@ -17,6 +17,7 @@ MERCADOS = {
     "DIA": "Dow Jones (ETF DIA)",
     "IWM": "Russell 2000 (ETF IWM)",
     "GLD": "Oro (ETF GLD)",
+    "GC=F": "Oro (futuros, se mueve como XAU/USD)",
     "SLV": "Plata (ETF SLV)",
     "USO": "Petróleo (ETF USO)",
     "TLT": "Bonos EE. UU. 20 años (ETF TLT)",
@@ -34,6 +35,7 @@ NOTICIAS = {
     "DIA": '"Dow Jones"',
     "IWM": '("Russell 2000" OR "small caps")',
     "GLD": '("gold price" OR "gold prices")',
+    "GC=F": '("gold price" OR "gold prices" OR "gold futures")',
     "SLV": '("silver price" OR "silver prices")',
     "USO": '("oil price" OR "oil prices" OR "crude oil")',
     "TLT": '("treasury yields" OR "bond yields")',
@@ -53,13 +55,13 @@ AJUSTES = {
 
 def archivo(simbolo: str, intervalo: str = "1h") -> str:
     """Nombre de archivo seguro para un símbolo (sin ^ ni =)."""
-    limpio = simbolo.replace("^", "IDX_").replace("=X", "_FX").replace("=", "_")
+    limpio = simbolo.replace("^", "IDX_").replace("=X", "_FX").replace("=F", "_FUT").replace("=", "_")
     return f"{limpio}-{intervalo}.csv"
 
 
 def simbolo_de_archivo(nombre: str) -> str:
     base = nombre.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].split("-")[0]
-    return base.replace("IDX_", "^").replace("_FX", "=X")
+    return base.replace("IDX_", "^").replace("_FX", "=X").replace("_FUT", "=F")
 
 
 def archivo_noticias(simbolo: str) -> str:
