@@ -184,7 +184,7 @@ def main(argv=None) -> int:
     ap.add_argument("--desde", default="2024-01-01", help="primer día (AAAA-MM-DD)")
     ap.add_argument("--dias", type=int, default=7, help="días por consulta de titulares (máx. 250 por consulta)")
     ap.add_argument("--simbolo", action="append", default=[], help="solo estos símbolos")
-    ap.add_argument("--pausa", type=float, default=PAUSA, help="segundos entre consultas a GDELT")
+    ap.add_argument("--pausa", type=float, default=10.0, help="segundos entre consultas a GDELT")
     a = ap.parse_args(argv)
     global PAUSA
     PAUSA = a.pausa
