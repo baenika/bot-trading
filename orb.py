@@ -34,6 +34,8 @@ VARIANTES = {
     "objetivo 1,5R": {"rr": 1.5},
     "objetivo 3R": {"rr": 3.0},
     "solo la primera hora": {"limite_entrada_min": 60},
+    "stop mínimo del 0,15 %": {"stop_min_pct": 0.15},
+    "sin costes (solo para ver cuánto pesan)": {"comision_pct": 0, "deslizamiento_pct": 0},
 }
 
 
@@ -107,8 +109,18 @@ def informe(series: dict, hoy: datetime | None = None) -> str:
                ", ".join(f"{k} ({v})" for k, v in sorted(base["motivos"].items(), key=lambda x: -x[1])
                          if k != "operación"), "", "## Qué haría", ""]
     st0 = resultados["como en el vídeo (order block, 2R)"]
-    mejor = max(resultados.items(), key=lambda x: x[1]["R_total"])
-    if st0["n"] < 30:
+    reales = {k: v for k, v in resultados.items() if not k.startswith("sin costes")}
+    mejor = max(reales.items(), key=lambda x: x[1]["R_total"])
+    con_ventaja = [k for k, v in reales.items() if v["n"] >= 30 and v["pf"] > 1.1]
+    if st0["n"] >= 30 and not con_ventaja:
+        lineas.append(f"Con {st0['n']} operaciones, la estrategia NO tiene ventaja: pierde en todas las variantes "
+                      f"(la del vídeo, profit factor {st0['pf']:.2f}). No la usaría para operar. Sigo acumulando "
+                      "días por si cambia, pero no apostaría por ella.")
+        sc = resultados["sin costes (solo para ver cuánto pesan)"]
+        if sc["pf"] > 1:
+            lineas.append(f"Ojo: sin costes saldría {sc['R_total']:+.1f} R. Los costes se comen la ventaja "
+                          "porque los stops son muy cortos.")
+    elif st0["n"] < 30:
         lineas.append(f"Con {st0['n']} operaciones todavía no se puede sacar ninguna conclusión: hacen falta "
                       "al menos 30. Lo dejo tal como se explicó en el vídeo y sigo acumulando días.")
     elif mejor[0] != "como en el vídeo (order block, 2R)" and mejor[1]["R_total"] > st0["R_total"] + 5:

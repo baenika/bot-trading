@@ -28,8 +28,9 @@ CONFIG_ORB = {
     "limite_entrada_min": 120,
     "entrada": "order_block",       # "order_block", "maximo_rango" o "cierre_ruptura" (sin esperar retroceso)
     "permitir_cortos": False,
-    "comision_pct": 0.05,
-    "deslizamiento_pct": 0.03,
+    "comision_pct": 0.01,          # ETF muy líquido: casi sin comisión, pero con horquilla
+    "deslizamiento_pct": 0.01,
+    "stop_min_pct": 0.0,           # si el stop queda más cerca que esto (% del precio), se aleja hasta aquí
     "riesgo_pct": 1.0,
     "capital_inicial": 10000.0,
 }
@@ -101,10 +102,13 @@ def operar_dia(simbolo: str, velas: list, dia: date, cfg: dict) -> tuple[Operaci
         entrada, stop = (ob.h, ob.l) if dir_ == "long" else (ob.l, ob.h)
     else:
         entrada, stop = (alto, bajo) if dir_ == "long" else (bajo, alto)
+    signo = 1 if dir_ == "long" else -1
+    minimo = entrada * cfg["stop_min_pct"] / 100
+    if abs(entrada - stop) < minimo:
+        stop = entrada - signo * minimo
     riesgo = abs(entrada - stop)
     if riesgo <= 0:
         return None, "order block sin rango"
-    signo = 1 if dir_ == "long" else -1
     objetivo = entrada + signo * cfg["rr"] * riesgo
     desl = cfg["deslizamiento_pct"] / 100
 
