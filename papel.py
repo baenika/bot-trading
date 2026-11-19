@@ -151,7 +151,11 @@ def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str) -> None:
         for o in m.operaciones[antes_ops:]:
             grupo.enviar("risk", f"{'🟢' if o['pnl'] > 0 else '🔴'} Cerrado {o['symbol']} por {o['reason']}: "
                                  f"{o['pnl']:+.2f} ({o['R']:+.2f}R) · capital ficticio {m.capital:,.2f}")
-        m.curva.append((backtest._fmt(t), round(m.capital, 2)))
+        punto = (backtest._fmt(t), round(m.capital, 2))
+        if m.curva and m.curva[-1][0] == punto[0]:
+            m.curva[-1] = punto          # un punto por hora, no uno por símbolo
+        else:
+            m.curva.append(punto)
 
     os.makedirs(os.path.dirname(ruta_estado), exist_ok=True)
     with open(ruta_estado, "w", encoding="utf-8") as f:
