@@ -11,8 +11,8 @@ cuenta ni clave. Por cada símbolo guarda:
 - el tono medio y el número de artículos de cada día.
 
 El bot de News solo usa titulares publicados ANTES de cada decisión.
-GDELT pide una consulta cada 5 segundos, así que tarda: unos 15-20 minutos por
-símbolo desde 2024. Si se corta, vuelve a lanzarlo y sigue donde lo dejó.
+GDELT corta si se le pide más de una consulta cada ~10 segundos, así que tarda:
+unos 30 minutos por símbolo desde 2024. Si se corta, vuelve a lanzarlo y sigue donde lo dejó.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
@@ -31,7 +32,7 @@ from consejo import mesas
 API = "https://api.gdeltproject.org/api/v2/doc/doc"
 UA = "Mozilla/5.0 (compatible; bot-trading/0.1)"
 RAIZ = os.path.dirname(os.path.abspath(__file__))
-PAUSA = 5.5
+PAUSA = 10.0          # GDELT corta con 429 si se le pide más rápido
 
 
 def _fmt(d: datetime) -> str:
@@ -43,8 +44,9 @@ def _consulta(simbolo: str) -> str:
     return f"{mesas.NOTICIAS[simbolo]} sourcelang:{idioma}"
 
 
-def _pedir(params: dict, reintentos: int = 3) -> dict | None:
+def _pedir(params: dict, reintentos: int = 5) -> dict | None:
     url = API + "?" + urllib.parse.urlencode(params)
+    texto = ""
     for k in range(reintentos):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": UA})
@@ -55,6 +57,16 @@ def _pedir(params: dict, reintentos: int = 3) -> dict | None:
             return json.loads(texto)
         except json.JSONDecodeError:
             print(f"   GDELT respondió: {texto[:120].strip()!r}")
+            if "limit requests" not in texto.lower():
+                return None             # consulta mal hecha: reintentar no sirve
+        except urllib.error.HTTPError as e:
+            if e.code != 429:
+                print(f"   error HTTP {e.code}, reintento {k + 1}/{reintentos}")
+            else:
+                espera = 30 * 2 ** k   # 30, 60, 120, 240, 480 s
+                print(f"   GDELT pide calma (429): espero {espera} s, reintento {k + 1}/{reintentos}")
+                time.sleep(espera)
+                continue
         except Exception as e:  # noqa: BLE001 - red caída, se reintenta
             print(f"   error de red ({e}), reintento {k + 1}/{reintentos}")
         time.sleep(PAUSA * (k + 2))
@@ -134,7 +146,7 @@ def bajar(simbolo: str, destino: str, desde: date, dias: int) -> None:
     guardar()
 
     # 2) titulares, ventana a ventana (se salta las ya bajadas)
-    t, n_nuevos = ini, 0
+    t, n_nuevos, vacias = ini, 0, []
     while t < ahora:
         fin = min(t + paso, ahora)
         clave = (t.isoformat(), fin.isoformat())
@@ -152,11 +164,18 @@ def bajar(simbolo: str, destino: str, desde: date, dias: int) -> None:
                         n_nuevos += 1
                 hechos.add(clave)
                 guardar()
-            print(f"   {simbolo} {t:%Y-%m-%d}: {len(d['titulares'])} titulares en total")
+            else:
+                vacias.append(f"{t:%Y-%m-%d}")
+            print(f"   {simbolo} {t:%Y-%m-%d}: {len(filas)} titulares en esta ventana "
+                  f"({len(d['titulares'])} en total)")
             time.sleep(PAUSA)
         t = fin
     guardar()
     print(f"{simbolo}: {len(d['titulares'])} titulares ({n_nuevos} nuevos), {len(d['dias'])} días con tono → {ruta}")
+    if vacias:
+        print(f"⚠️  {simbolo}: {len(vacias)} ventanas sin titulares ({', '.join(vacias[:8])}"
+              f"{'…' if len(vacias) > 8 else ''}). News no opinará en esas fechas. "
+              "Vuelve a lanzar el comando para reintentarlas.")
 
 
 def main(argv=None) -> int:
@@ -165,7 +184,10 @@ def main(argv=None) -> int:
     ap.add_argument("--desde", default="2024-01-01", help="primer día (AAAA-MM-DD)")
     ap.add_argument("--dias", type=int, default=7, help="días por consulta de titulares (máx. 250 por consulta)")
     ap.add_argument("--simbolo", action="append", default=[], help="solo estos símbolos")
+    ap.add_argument("--pausa", type=float, default=PAUSA, help="segundos entre consultas a GDELT")
     a = ap.parse_args(argv)
+    global PAUSA
+    PAUSA = a.pausa
     destino = os.path.join(RAIZ, "datos", "noticias")
     os.makedirs(destino, exist_ok=True)
     simbolos = a.simbolo or ((list(mesas.CRIPTO) if a.mesa in ("cripto", "todo") else [])
