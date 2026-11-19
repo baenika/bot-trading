@@ -40,6 +40,7 @@ CONFIG_DEFECTO = {
     "atr_vela_min": 2.0,
     "fomo_atr": 3.0,
     "pausa_tras_perdidas": 3,
+    "fomo_modo": "esperar",       # "esperar": con FOMO solo se entra si retrocede; "vetar": no se entra
     "puntos_para_entrar": 2,
     "puntos_para_esperar": 1,
     "risk_per_trade_pct": 1.0,
@@ -281,6 +282,10 @@ class Motor:
         self.decisiones[dec["decision"]] += 1
         for v in dec["vetoes"]:
             self.vetos[re.sub(r"[\d.,]+", "N", v.split(": ")[0])[:60]] += 1
+        if len(dec["vetoes"]) == 1:
+            self.vetos["(solo) " + re.sub(r"[\d.,]+", "N", dec["vetoes"][0].split(": ")[0])[:52]] += 1
+        if senti.get("fomo"):
+            self.vetos["(aviso, no veto) FOMO: esperar retroceso"] += 1
         if not dec["vetoes"]:
             self.puntos[round(dec["score"])] += 1
 
@@ -482,7 +487,7 @@ def estado_panel(m: "Motor", series: dict, fuente: str, periodo: str | None, sin
         "bots": m.bots,
         "last_decision": m.ultima,
         "decisions": dict(m.decisiones),
-        "veto_counts": dict(m.vetos.most_common(10)),
+        "veto_counts": dict(m.vetos.most_common(14)),
         "score_counts": {str(k): v for k, v in sorted(m.puntos.items())},
         "exam": examen(st, _comprar_y_mantener(series)),
         "calibration": m.calibracion.resumen(m.cfg["calibracion_max_error"], m.cfg["calibracion_min_casos"]),

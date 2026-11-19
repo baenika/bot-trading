@@ -387,3 +387,15 @@ def test_hn_filtra_ruido():
                    {"title": "ECB cuts rates again", "created_at_i": 1704067200, "points": 50},
                    {"title": "ECB holds", "created_at_i": 1704067200, "points": 1}]}
     assert [x["titulo"] for x in dn.hn_a_filas(js, ["ecb"], min_puntos=3)] == ["ECB cuts rates again"]
+
+
+def test_fomo_no_persigue_espera_retroceso():
+    from consejo.agentes import skeptic
+    vs = _serie_con_ruptura()
+    ctx = Contexto("X", vs)
+    a = scout.escanear(ctx, len(vs) - 1, backtest.CONFIG_DEFECTO)
+    p = charts.planificar(ctx, a, backtest.CONFIG_DEFECTO)
+    cfg = {**backtest.CONFIG_DEFECTO, "rr_minimo": 0, "puntos_para_entrar": -10, "puntos_para_esperar": -20}
+    normal = skeptic.decidir(ctx, a, p, {}, {"n": 0}, {}, {}, cfg)
+    fomo = skeptic.decidir(ctx, a, p, {"fomo": True}, {"n": 0}, {}, {}, cfg)
+    assert normal["decision"] == "COMPRAR" and fomo["decision"] == "ESPERAR"

@@ -59,9 +59,11 @@ def decidir(ctx, alerta, plan, sentimental: dict, estudio: dict, sim: dict, noti
         puntos -= 1
     puntos -= 0.5 * len(vetos)
 
+    if sentimental.get("fomo"):
+        contras.append("Sentimental: el precio está estirado, no se persigue (como mucho, ESPERAR al retroceso)")
     if vetos:
         decision = PASAR
-    elif puntos >= cfg.get("puntos_para_entrar", 2):
+    elif puntos >= cfg.get("puntos_para_entrar", 2) and not sentimental.get("fomo"):
         decision = COMPRAR if alerta.dir == "long" else VENDER
     elif puntos >= cfg.get("puntos_para_esperar", 1):
         decision = ESPERAR

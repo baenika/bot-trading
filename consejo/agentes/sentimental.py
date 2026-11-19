@@ -10,7 +10,7 @@ def opinar(ctx, alerta, racha_perdidas: int, estudio: dict | None, sim: dict | N
     distancia = (ctx.velas[i].c - ctx.ema20[i]) / a
     if alerta.dir == "short":
         distancia = -distancia
-    motivos, bloquea = [], None
+    motivos, bloquea, fomo = [], None, False
 
     temp = 50 + 8 * distancia + 5 * racha_perdidas
 
@@ -30,7 +30,11 @@ def opinar(ctx, alerta, racha_perdidas: int, estudio: dict | None, sim: dict | N
 
     if distancia > cfg.get("fomo_atr", 3.0):
         motivos.append(f"el precio está a {distancia:.1f} ATR de su media: perseguirlo es FOMO")
-        bloquea = "FOMO: el precio ya se ha ido"
+        fomo = True
+        if cfg.get("fomo_modo", "esperar") == "vetar":
+            bloquea = "FOMO: el precio ya se ha ido"
+        else:
+            motivos.append("no se persigue: solo se entra si retrocede al precio de espera")
     if racha_perdidas >= cfg.get("pausa_tras_perdidas", 3):
         motivos.append(f"{racha_perdidas} pérdidas seguidas: pausa para no operar por venganza")
         bloquea = bloquea or "en racha de pérdidas"
@@ -38,6 +42,7 @@ def opinar(ctx, alerta, racha_perdidas: int, estudio: dict | None, sim: dict | N
     cuadros = round(temp / 20)
     lineas = [f"Temperatura {'🟦' * cuadros}{'⬜' * (5 - cuadros)} {temp:.0f}/100 → "
               + ("NO entrar ahora, es emoción" if bloquea
+                 else "caliente: esperar a que retroceda" if fomo
                  else "algo caliente, con cuidado" if temp >= 65 else "cabeza fría, se puede valorar")]
     lineas += [f"• {m}" for m in motivos]
     if estudio and estudio.get("n"):
@@ -47,7 +52,7 @@ def opinar(ctx, alerta, racha_perdidas: int, estudio: dict | None, sim: dict | N
         lineas.append(f"🕰️ Máquina del tiempo (solo informativo): en {sim['paths']:,} futuros posibles toca el "
                       f"objetivo primero el {sim['p_tp']:.0f}% de las veces y el stop el {sim['p_sl']:.0f}%."
                       .replace(",", "."))
-    return {"temperatura": temp, "bloquea": bloquea, "texto": "\n".join(lineas)}
+    return {"temperatura": temp, "bloquea": bloquea, "fomo": fomo, "texto": "\n".join(lineas)}
 
 
 def estudio_historico(casos: list[dict], alerta, i_actual: int, h: int = 12) -> dict:
