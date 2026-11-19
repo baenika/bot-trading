@@ -5,3 +5,4 @@ __pycache__/
 datos/*.csv
 !datos/ejemplo.csv
 .env
+datos/noticias/

@@ -6,7 +6,7 @@ COMPRAR, VENDER, ESPERAR, PASAR = "COMPRAR", "VENDER", "ESPERAR", "PASAR"
 
 
 def decidir(ctx, alerta, plan, sentimental: dict, estudio: dict, sim: dict, noticias: dict,
-            cfg: dict) -> dict:
+            cfg: dict, calibrada: bool = False) -> dict:
     i = alerta.i
     pros, contras, vetos = [], [], []
     puntos = 0.0
@@ -31,15 +31,24 @@ def decidir(ctx, alerta, plan, sentimental: dict, estudio: dict, sim: dict, noti
         elif estudio["acierto"] < 45:
             contras.append(f"en el pasado solo funcionó el {estudio['acierto']:.0f}% de las veces")
             puntos -= 1
-    if sim.get("paths"):
+    # La máquina del tiempo solo vota si el backtest ha demostrado que acierta
+    # (error de calibración por debajo de ~7 puntos). Si no, es solo informativa.
+    if sim.get("paths") and calibrada:
         margen = sim["p_tp"] - sim["breakeven"]
         if margen >= 5:
-            pros.append(f"la máquina del tiempo da {sim['p_tp']:.0f}% al objetivo (hace falta {sim['breakeven']:.0f}%)")
+            pros.append(f"la máquina del tiempo (calibrada) da {sim['p_tp']:.0f}% al objetivo "
+                        f"(hace falta {sim['breakeven']:.0f}%)")
             puntos += 1
         elif margen < 0:
-            contras.append(f"la máquina del tiempo da solo {sim['p_tp']:.0f}% al objetivo "
+            contras.append(f"la máquina del tiempo (calibrada) da solo {sim['p_tp']:.0f}% al objetivo "
                            f"(hace falta {sim['breakeven']:.0f}%)")
             puntos -= 1
+    if noticias.get("pro"):
+        pros.append(f"News: {noticias['pro']}")
+        puntos += 1
+    if noticias.get("contra"):
+        contras.append(f"News: {noticias['contra']}")
+        puntos -= 1
     tendencia_up = ctx.velas[i].c > ctx.ema200[i] and ctx.ema50[i] > ctx.ema200[i]
     tendencia_down = ctx.velas[i].c < ctx.ema200[i] and ctx.ema50[i] < ctx.ema200[i]
     if (alerta.dir == "long" and tendencia_up) or (alerta.dir == "short" and tendencia_down):

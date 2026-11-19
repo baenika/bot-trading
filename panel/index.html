@@ -373,10 +373,11 @@ function render(d){
         <div class="muted" style="font-size:12px">Temperatura emocional ${temp}/100</div>
         <div class="meter" style="width:160px"><i style="width:${temp}%;background:${temp>=80?"var(--down)":temp>=50?"var(--wait)":"var(--up)"}"></i></div></div></div>
       <ul class="lv">${li(v.vetoes,"⛔")}${li(v.pros,"➕")}${li(v.cons,"➖")}</ul>
-      ${v.sim && v.sim.p_tp!=null ? `<div class="note" style="margin-top:12px">🕰️ <b>Máquina del tiempo</b> <span class="muted">(solo informativo)</span><br>
+      ${v.sim && v.sim.p_tp!=null ? `<div class="note" style="margin-top:12px">🕰️ <b>Máquina del tiempo</b> <span class="muted">(${d.calibration && d.calibration.usable ? "calibrada" : "solo informativo"})</span><br>
         En ${Number(v.sim.paths).toLocaleString("es-ES")} futuros posibles: objetivo primero <b style="color:var(--up)">${v.sim.p_tp}%</b> · stop primero <b style="color:var(--down)">${v.sim.p_sl}%</b> · ninguno ${v.sim.p_none}%
         <div class="meter" style="display:flex;height:9px"><i style="width:${v.sim.p_tp}%;background:var(--up);border-radius:0"></i><i style="width:${v.sim.p_sl}%;background:var(--down);border-radius:0"></i></div>
-        <span class="muted" style="font-size:12px">Para no perder hace falta un ${v.sim.breakeven}%</span></div>` : ""}
+        <span class="muted" style="font-size:12px">Para no perder hace falta un ${v.sim.breakeven}%</span>
+        ${d.calibration && d.calibration.n ? `<br><span class="muted" style="font-size:12px">Calibración en el backtest: ${d.calibration.n} casos, error ${d.calibration.error_pts} puntos → ${d.calibration.usable ? "ya puede votar en el Skeptic" : "todavía solo informativa (hace falta < " + d.calibration.max_error_pts + ")"}</span>` : ""}</div>` : ""}
       <div class="plan"><div><small>Entrada</small><b>${px(v.wait_price || v.entry)}</b></div>
         <div><small>Stop loss</small><b style="color:var(--down)">${px(v.sl)}</b></div>
         <div><small>Objetivo</small><b style="color:var(--up)">${px(v.tp)}</b></div></div>`;

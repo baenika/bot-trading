@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 def opinar(ctx, alerta, racha_perdidas: int, estudio: dict | None, sim: dict | None,
-           cfg: dict) -> dict:
+           cfg: dict, noticias: dict | None = None) -> dict:
     i = alerta.i
     a = ctx.atr[i] or 1e-9
     distancia = (ctx.velas[i].c - ctx.ema20[i]) / a
@@ -13,6 +13,19 @@ def opinar(ctx, alerta, racha_perdidas: int, estudio: dict | None, sim: dict | N
     motivos, bloquea = [], None
 
     temp = 50 + 8 * distancia + 5 * racha_perdidas
+
+    # el ruido de los medios también calienta: mucha noticia y muy eufórica = FOMO de manual
+    n = noticias or {}
+    vol_rel, tono = n.get("volumen_rel"), n.get("tono_ayer")
+    lado = 1 if alerta.dir == "long" else -1
+    if vol_rel and vol_rel >= cfg.get("bombo_volumen", 3.0):
+        temp += 10
+        motivos.append(f"ayer se habló de esto x{vol_rel:.1f} más de lo normal: hay bombo")
+    if tono is not None and tono * lado >= cfg.get("bombo_tono", 3.0):
+        temp += 8
+        motivos.append(f"los medios están eufóricos (tono {tono:+.1f}): cuidado con llegar tarde")
+    elif tono is not None and tono * lado <= -cfg.get("bombo_tono", 3.0):
+        motivos.append(f"los medios están muy negativos (tono {tono:+.1f}): entrar contra el miedo pide stop firme")
     temp = max(0.0, min(100.0, temp))
 
     if distancia > cfg.get("fomo_atr", 3.0):

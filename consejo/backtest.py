@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import maquina_tiempo, seguridad
 from .agentes import charts, news, scout, sentimental, skeptic
@@ -44,7 +44,77 @@ CONFIG_DEFECTO = {
     "daily_loss_limit_pct": 3.0,
     "max_drawdown_pct": 15.0,
     "max_open_positions": 3,
+    "moving_pct": 3.0,
+    "ventana_noticias_h": 24,
+    "calibracion_max_error": 7.0,
+    "calibracion_min_casos": 200,
 }
+
+
+def _duracion(timeframe: str) -> timedelta:
+    n, u = int(timeframe[:-1] or 1), timeframe[-1]
+    return {"m": timedelta(minutes=n), "h": timedelta(hours=n), "d": timedelta(days=n)}.get(u, timedelta(hours=1))
+
+
+def toca_objetivo(ctx, i: int, plan, max_barras: int) -> bool | None:
+    """¿Llegó antes al objetivo que al stop en las siguientes velas? (lo que predice la máquina del tiempo)."""
+    vs = ctx.velas
+    if i + max_barras >= len(vs):
+        return None
+    for k in range(i + 1, i + 1 + max_barras):
+        v = vs[k]
+        if (plan.dir == "long" and v.l <= plan.stop) or (plan.dir == "short" and v.h >= plan.stop):
+            return False                       # si toca los dos en la misma vela, cuenta el stop
+        if (plan.dir == "long" and v.h >= plan.objetivo) or (plan.dir == "short" and v.l <= plan.objetivo):
+            return True
+    return False
+
+
+class Calibracion:
+    """Compara lo que dijo la máquina del tiempo con lo que pasó de verdad.
+
+    Solo cuenta un caso cuando ya ha pasado su horizonte, así que en cada
+    momento del backtest solo se usa información que ya se conocía.
+    """
+
+    def __init__(self):
+        self.pendientes: list[tuple[datetime, float, bool]] = []
+        self.tramos = [[0, 0.0, 0] for _ in range(10)]    # casos, suma de p predicha, aciertos
+
+    def anotar(self, t_resuelve, p_tp: float, acierto: bool):
+        self.pendientes.append((t_resuelve, p_tp, acierto))
+
+    def avanzar(self, t):
+        quedan = []
+        for tr, p, ok in self.pendientes:
+            if tr <= t:
+                b = self.tramos[min(9, int(p // 10))]
+                b[0] += 1
+                b[1] += p
+                b[2] += ok
+            else:
+                quedan.append((tr, p, ok))
+        self.pendientes = quedan
+
+    @property
+    def n(self) -> int:
+        return sum(b[0] for b in self.tramos)
+
+    def error(self) -> float | None:
+        """Error medio en puntos: |% predicho - % real|, ponderado por casos de cada tramo."""
+        n = self.n
+        if not n:
+            return None
+        return sum(abs(b[1] / b[0] - 100 * b[2] / b[0]) * b[0] for b in self.tramos if b[0]) / n
+
+    def resumen(self, max_error: float, min_casos: int) -> dict:
+        self.avanzar(datetime.max.replace(tzinfo=timezone.utc))
+        e = self.error()
+        return {"n": self.n, "error_pts": round(e, 1) if e is not None else None,
+                "max_error_pts": max_error, "min_casos": min_casos,
+                "usable": e is not None and self.n >= min_casos and e < max_error,
+                "tramos": [{"pred_%": round(b[1] / b[0], 1), "real_%": round(100 * b[2] / b[0], 1), "n": b[0]}
+                           for b in self.tramos if b[0]]}
 
 
 def _fmt(t) -> str:
@@ -73,7 +143,8 @@ def resultado_r(ctx, i: int, plan, max_barras: int) -> float | None:
 
 
 class Motor:
-    def __init__(self, series: dict, cfg: dict | None = None, con_skeptic: bool = True):
+    def __init__(self, series: dict, cfg: dict | None = None, con_skeptic: bool = True,
+                 noticias: dict | None = None):
         self.cfg = {**CONFIG_DEFECTO, **(cfg or {})}
         seguridad.comprobar_config(self.cfg)
         self.con_skeptic = con_skeptic
@@ -92,6 +163,9 @@ class Motor:
         self.racha = 0
         self.bots: dict[str, dict] = {}
         self.ultima: dict | None = None
+        self.noticias = noticias or {}
+        self.calibracion = Calibracion()
+        self.paso = _duracion(self.cfg["timeframe"])
 
     # --- ejecución simulada -------------------------------------------------
     def _coste(self, precio: float, tam: float) -> float:
@@ -180,11 +254,21 @@ class Motor:
                                      plan.dir, horizonte=cfg["max_barras"], caminos=caminos, semilla=i)
         estudio = sentimental.estudio_historico(self.casos[s], alerta, i, h)
         self.casos[s].append({"i": i, "dir": alerta.dir, "fuerza": alerta.fuerza, "ret_h": ret_h})
-        senti = sentimental.opinar(ctx, alerta, self.racha, estudio, sim, cfg)
-        noticias = news.opinar(alerta, en_backtest=True)
+        cierre = alerta.t + self.paso           # la decisión se toma al cierre de la vela
+        noticias = news.opinar(alerta, ctx, self.noticias.get(s), cierre, cfg)
+        senti = sentimental.opinar(ctx, alerta, self.racha, estudio, sim, cfg, noticias)
+
+        # calibración de la máquina del tiempo: solo con casos ya resueltos
+        self.calibracion.avanzar(cierre)
+        ok = toca_objetivo(ctx, i, plan, cfg["max_barras"])
+        if ok is not None and sim.get("paths"):
+            self.calibracion.anotar(ctx.velas[i + cfg["max_barras"]].t + self.paso, sim["p_tp"], ok)
+        err = self.calibracion.error()
+        calibrada = (err is not None and err < cfg["calibracion_max_error"]
+                     and self.calibracion.n >= cfg["calibracion_min_casos"])
 
         if self.con_skeptic:
-            dec = skeptic.decidir(ctx, alerta, plan, senti, estudio, sim, noticias, cfg)
+            dec = skeptic.decidir(ctx, alerta, plan, senti, estudio, sim, noticias, cfg, calibrada)
         else:  # comparación: entra en todo lo que permite la config
             veto = alerta.dir == "short" and not cfg["permitir_cortos"]
             d = "PASAR" if veto else ("COMPRAR" if alerta.dir == "long" else "VENDER")
@@ -272,10 +356,11 @@ def _comprar_y_mantener(series: dict) -> float:
     return sum(rs) / len(rs) if rs else 0.0
 
 
-def ejecutar(series: dict, cfg: dict | None = None, fuente: str = "backtest", periodo: str | None = None) -> dict:
+def ejecutar(series: dict, cfg: dict | None = None, fuente: str = "backtest", periodo: str | None = None,
+             noticias: dict | None = None) -> dict:
     """Corre el Consejo y la versión sin Skeptic, y devuelve el JSON del panel."""
-    m = Motor(series, cfg).correr()
-    sin = Motor(series, cfg, con_skeptic=False).correr()
+    m = Motor(series, cfg, noticias=noticias).correr()
+    sin = Motor(series, cfg, con_skeptic=False, noticias=noticias).correr()
     st, sc = m.estadisticas(), sin.estadisticas()
     ultimo = m.curva[-1][0] if m.curva else None
     hoy = ultimo[:10] if ultimo else None
@@ -304,6 +389,8 @@ def ejecutar(series: dict, cfg: dict | None = None, fuente: str = "backtest", pe
         "bots": m.bots,
         "last_decision": m.ultima,
         "decisions": dict(m.decisiones),
+        "calibration": m.calibracion.resumen(m.cfg["calibracion_max_error"], m.cfg["calibracion_min_casos"]),
+        "news_coverage": {s: len(a.titulares) for s, a in (noticias or {}).items()},
         "skeptic_saved": {
             "rejected": len(m.rechazadas),
             "would_lose": sum(r < 0 for r in m.rechazadas),

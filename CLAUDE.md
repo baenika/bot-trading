@@ -20,8 +20,10 @@ Bot de trading multi-agente ("el Consejo") de David. Toda la documentación y lo
 ## Comandos
 
 - Tests: `python -m pytest -q`
-- Backtest con datos sintéticos: `python run_backtest.py`
-- Datos reales (públicos): `python descargar_datos.py todo`
+- Backtest con datos sintéticos (solo para probar código): `python run_backtest.py --sinteticos`
+- Datos reales (públicos): `python descargar_datos.py todo` y `python descargar_noticias.py todo`
+- Nada de datos inventados fuera de los tests: el backtest usa velas y noticias reales; `--sinteticos` solo para probar el código
+- News nunca puede mirar titulares posteriores a la decisión (sin lookahead)
 - Backtest por mesa: `python run_backtest.py --mesa cripto` o `--mesa mercados`
 - Las mesas y sus símbolos están en `consejo/mesas.py`
 - Panel: `python dashboard_server.py` y abrir http://localhost:8000

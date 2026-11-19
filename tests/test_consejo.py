@@ -180,3 +180,114 @@ def test_corte_de_drawdown_cierra_todo():
     if m.riesgo.parado:
         assert not m.abiertas
         assert m.estadisticas()["max_dd_pct"] > -4.0
+
+
+# --- noticias reales (sin mirar el futuro) ------------------------------------------
+
+def _archivo(titulares, cubre=True):
+    from consejo.agentes import news
+    t0 = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    return news.Archivo.desde_json({
+        "simbolo": "X",
+        "titulares": [{"t": t.isoformat(), "titulo": x} for t, x in titulares],
+        "dias": {},
+        "cubre": [[t0.isoformat(), (t0 + timedelta(days=400)).isoformat()]] if cubre else []})
+
+
+def test_news_no_mira_el_futuro():
+    vs = _serie_con_ruptura()
+    ctx = Contexto("X", vs)
+    a = scout.escanear(ctx, len(vs) - 1, backtest.CONFIG_DEFECTO)
+    cierre = a.t + timedelta(hours=1)
+    from consejo.agentes import news
+    arch = _archivo([(cierre - timedelta(hours=2), "Bitcoin surges after ETF approval"),
+                     (cierre + timedelta(minutes=1), "Exchange hack: funds stolen")])
+    r = news.opinar(a, ctx, arch, cierre)
+    assert r["titulares"] == ["Bitcoin surges after ETF approval"]
+    assert r["veto"] is None and r["pro"]
+    assert "etf" in r["etiquetas"]
+
+
+def test_news_veta_noticia_grave():
+    vs = _serie_con_ruptura()
+    ctx = Contexto("X", vs)
+    a = scout.escanear(ctx, len(vs) - 1, backtest.CONFIG_DEFECTO)
+    cierre = a.t + timedelta(hours=1)
+    from consejo.agentes import news
+    r = news.opinar(a, ctx, _archivo([(cierre - timedelta(hours=3), "Major exchange hack drains wallets")]), cierre)
+    assert r["veto"]
+
+
+def test_news_sin_cobertura_no_opina():
+    vs = _serie_con_ruptura()
+    ctx = Contexto("X", vs)
+    a = scout.escanear(ctx, len(vs) - 1, backtest.CONFIG_DEFECTO)
+    from consejo.agentes import news
+    r = news.opinar(a, ctx, _archivo([], cubre=False), a.t + timedelta(hours=1))
+    assert r["veto"] is None and r["pro"] is None and r["contra"] is None
+    assert news.opinar(a, ctx, None, None)["contra"] is None
+
+
+def test_news_moving_3_por_ciento():
+    vs = _serie_con_ruptura()           # última vela: +6 %
+    from consejo.agentes import news
+    assert abs(news.cambio_vs_ayer(Contexto("X", vs), len(vs) - 1)) > 0
+    a = scout.escanear(Contexto("X", vs), len(vs) - 1, backtest.CONFIG_DEFECTO)
+    assert news.opinar(a, Contexto("X", vs))["moving"] == (abs(news.cambio_vs_ayer(Contexto("X", vs), len(vs) - 1)) >= 3)
+
+
+def test_skeptic_ignora_maquina_sin_calibrar():
+    from consejo.agentes import skeptic
+    vs = _serie_con_ruptura()
+    ctx = Contexto("X", vs)
+    a = scout.escanear(ctx, len(vs) - 1, backtest.CONFIG_DEFECTO)
+    p = charts.planificar(ctx, a, backtest.CONFIG_DEFECTO)
+    sim = {"paths": 1000, "p_tp": 90.0, "p_sl": 10.0, "breakeven": 33.3}
+    args = (ctx, a, p, {}, {"n": 0}, sim, {}, backtest.CONFIG_DEFECTO)
+    sin = skeptic.decidir(*args)
+    con = skeptic.decidir(*args, calibrada=True)
+    assert not any("máquina" in x for x in sin["pros"])
+    assert con["score"] == sin["score"] + 1
+
+
+def test_calibracion_solo_casos_resueltos():
+    c = backtest.Calibracion()
+    t0 = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    for k in range(10):
+        c.anotar(t0 + timedelta(hours=k), 60.0, k < 6)
+    c.avanzar(t0 + timedelta(hours=4))
+    assert c.n == 5
+    c.avanzar(t0 + timedelta(hours=100))
+    assert c.n == 10 and c.error() == pytest.approx(0.0)
+
+
+def test_run_backtest_sin_datos_no_inventa(tmp_path, monkeypatch):
+    import run_backtest
+    monkeypatch.setattr(run_backtest, "RAIZ", str(tmp_path))
+    assert run_backtest.main(["--mesa", "cripto", "--salida", str(tmp_path / "x.json")]) == 1
+    assert not (tmp_path / "x.json").exists()
+
+
+def test_backtest_con_archivo_de_noticias():
+    from consejo.agentes import news
+    series = {"BTCUSDT": datos.sinteticas("BTCUSDT", 1500, 30000, semilla=1)}
+    vs = series["BTCUSDT"]
+    arch = news.Archivo.desde_json({
+        "simbolo": "BTCUSDT",
+        "titulares": [{"t": v.t.isoformat(), "titulo": "Bitcoin rally continues"} for v in vs[::24]],
+        "dias": {}, "cubre": [[vs[0].t.isoformat(), vs[-1].t.isoformat()]]})
+    d = backtest.ejecutar(series, {"caminos_backtest": 100, "caminos_ultima": 100}, noticias={"BTCUSDT": arch})
+    assert d["news_coverage"] == {"BTCUSDT": len(vs[::24])}
+    assert "n" in d["calibration"]
+
+
+def test_gdelt_a_filas():
+    import descargar_noticias as dn
+    filas = dn.titulares_a_filas({"articles": [
+        {"seendate": "20240115T103000Z", "title": "Gold prices jump", "domain": "x.com", "url": "u"},
+        {"seendate": "", "title": "sin fecha"}]})
+    assert len(filas) == 1 and filas[0]["t"].startswith("2024-01-15T10:30")
+    tono = dn.serie_diaria({"timeline": [{"data": [{"date": "20240115T000000Z", "value": -2},
+                                                   {"date": "20240115T120000Z", "value": 0}]}]})
+    assert tono == {"2024-01-15": -1.0}
+    assert dn._juntar([["b", "c"], ["a", "b"], ["d", "e"]]) == [["a", "c"], ["d", "e"]]

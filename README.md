@@ -5,13 +5,13 @@ Bot de trading multi-agente de David. Seis bots discuten cada oportunidad y el S
 | Bot | Qué hace |
 | --- | --- |
 | Scout | Detecta movimientos raros: volumen anómalo, velas enormes, rupturas, salidas de compresión |
-| News | Busca por qué se mueve (en backtest no opina) |
+| News | Busca por qué se mueve con noticias reales de GDELT: marca MOVING (≥3 % desde el cierre de ayer), etiqueta titulares y veta noticias graves. Solo mira lo publicado antes de cada decisión |
 | Charts | Hace el plan: entrada, stop, objetivo, entrada mejor si retrocede y niveles que estorban |
-| Sentimental | Frena el FOMO y la operación por venganza, y mira casos parecidos del pasado |
+| Sentimental | Frena el FOMO, la operación por venganza y el bombo de los medios, y mira casos parecidos del pasado |
 | Skeptic | Suma pros y contras, aplica vetos y decide COMPRAR, ESPERAR o PASAR |
 | Risk | Arriesga un 1 % por operación, para el día al −3 % y para todo al −15 % |
 
-La **máquina del tiempo** (idea de [day-trader-skill](https://github.com/Jakeschincariol/day-trader-skill), MIT) repite cada plan miles de veces con rendimientos pasados del activo y cuenta cuántas veces llega antes al objetivo que al stop.
+La **máquina del tiempo** (idea de [day-trader-skill](https://github.com/Jakeschincariol/day-trader-skill), MIT) repite cada plan miles de veces con rendimientos pasados del activo y cuenta cuántas veces llega antes al objetivo que al stop. Es **solo informativa**: el Skeptic solo la tiene en cuenta si el backtest demuestra que acierta (error de calibración menor de 7 puntos con al menos 200 casos).
 
 ## Mesas
 
@@ -27,18 +27,17 @@ La lista de la mesa de mercados está en `consejo/mesas.py`: añade o quita sím
 
 Necesitas Python 3.10 o superior. En Windows, usa `py` en vez de `python` (por ejemplo `py run_backtest.py`). No hace falta instalar nada más, salvo `pytest` para los tests.
 
-```bash
-python run_backtest.py          # prueba con datos sintéticos
-python dashboard_server.py      # abre http://localhost:8000
-```
-
-Con datos reales (precios públicos, sin cuentas ni claves):
+Todo funciona con datos reales (precios y noticias públicos, sin cuentas ni claves):
 
 ```bash
-python descargar_datos.py todo            # baja cripto y mercados a datos/
+python descargar_datos.py todo            # velas de cripto y mercados a datos/
+python descargar_noticias.py todo         # noticias de GDELT a datos/noticias/ (tarda: ~5 s por consulta)
 python run_backtest.py --mesa cripto
 python run_backtest.py --mesa mercados
+python dashboard_server.py                # abre http://localhost:8000
 ```
+
+Sin datos reales el backtest no corre. Los datos inventados solo existen para probar el código: `python run_backtest.py --sinteticos`.
 
 Los ajustes están en `config.example.json`. Cópialo y pásalo con `--config mi_config.json`.
 
@@ -46,6 +45,7 @@ Los ajustes están en `config.example.json`. Cópialo y pásalo con `--config mi
 
 - El panel compara el Consejo **con** Skeptic, **sin** Skeptic y **comprar y mantener**.
 - Un buen resultado con datos sintéticos no significa nada: solo prueba que el código funciona.
+- La línea "Máquina del tiempo: N casos, error X puntos" dice si sus probabilidades se parecen a lo que pasó de verdad.
 - Con datos reales, lo que importa es el drawdown, el número de operaciones y el profit factor, no solo la rentabilidad.
 
 ## Seguridad

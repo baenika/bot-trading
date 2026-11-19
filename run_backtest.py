@@ -1,11 +1,13 @@
 """Corre el backtest del Consejo y guarda el resultado para el panel.
 
 Uso:
-    python run_backtest.py                      # mesa cripto: usa datos/ si hay CSV, si no datos sintéticos
+    python run_backtest.py                      # mesa cripto, con los CSV reales de datos/
     python run_backtest.py --mesa mercados      # S&P 500, Nasdaq, oro, petróleo, EUR/USD, IBEX...
     python run_backtest.py --csv datos/BTCUSDT-1h.csv --csv datos/ETHUSDT-1h.csv
 
 Primero baja los datos reales con:  python descargar_datos.py todo
+y las noticias históricas con:       python descargar_noticias.py todo
+Sin datos reales no corre: los datos inventados solo existen con --sinteticos (para probar el código).
 Todo es simulado. Este programa no se conecta a ningún broker ni exchange.
 """
 
@@ -17,6 +19,7 @@ import os
 import sys
 
 from consejo import backtest, datos, mesas, seguridad
+from consejo.agentes import news
 
 RAIZ = os.path.dirname(os.path.abspath(__file__))
 
@@ -35,7 +38,9 @@ def main(argv=None) -> int:
     ap.add_argument("--config", help="JSON con la configuración (ver config.example.json)")
     ap.add_argument("--salida", help="por defecto salida/estado_<mesa>.json")
     ap.add_argument("--velas", type=int, default=6000, help="velas sintéticas por símbolo")
-    ap.add_argument("--sinteticos", action="store_true", help="ignorar datos/ y usar datos inventados")
+    ap.add_argument("--sinteticos", action="store_true",
+                    help="SOLO para probar el código: usa datos inventados en vez de los reales")
+    ap.add_argument("--sin-noticias", action="store_true", help="no cargar datos/noticias/")
     a = ap.parse_args(argv)
 
     cfg = dict(mesas.AJUSTES[a.mesa], timeframe=a.intervalo)
@@ -50,8 +55,12 @@ def main(argv=None) -> int:
         series = {s: v for s, v in series.items() if len(v) > 250}
         ts = [v for vs in series.values() for v in (vs[0], vs[-1])]
         periodo = f"{min(v.t for v in ts):%Y-%m-%d} → {max(v.t for v in ts):%Y-%m-%d}" if ts else "vacío"
+    elif not a.sinteticos:
+        print("No hay datos reales en datos/. Bájalos primero con:  python descargar_datos.py todo\n"
+              "(Para probar solo el código con datos inventados: --sinteticos)")
+        return 1
     else:
-        print("Sin CSV en datos/: uso datos SINTÉTICOS (solo para probar el código).")
+        print("⚠️  Datos SINTÉTICOS: solo sirven para probar el código, el resultado no significa nada.")
         if a.mesa == "cripto":
             series = {"BTCUSDT": datos.sinteticas("BTCUSDT", a.velas, 30000, semilla=1),
                       "ETHUSDT": datos.sinteticas("ETHUSDT", a.velas, 2000, semilla=2)}
@@ -63,7 +72,19 @@ def main(argv=None) -> int:
         print("No hay datos suficientes para correr el backtest.")
         return 1
 
-    estado = backtest.ejecutar(series, cfg, fuente="backtest", periodo=periodo)
+    archivos = {}
+    if not a.sinteticos and not a.sin_noticias:
+        for s in series:
+            arch = news.Archivo.cargar(os.path.join(RAIZ, "datos", "noticias", mesas.archivo_noticias(s)))
+            if arch:
+                archivos[s] = arch
+        if archivos:
+            print("Noticias: " + ", ".join(f"{s} {len(x.titulares)} titulares" for s, x in archivos.items()))
+        else:
+            print("Sin noticias en datos/noticias/ (bájalas con: python descargar_noticias.py todo). "
+                  "News no opinará.")
+
+    estado = backtest.ejecutar(series, cfg, fuente="backtest", periodo=periodo, noticias=archivos)
     estado["desk"] = a.mesa
     salida = a.salida or os.path.join(RAIZ, "salida", f"estado_{a.mesa}.json")
     os.makedirs(os.path.dirname(salida) or ".", exist_ok=True)
@@ -77,6 +98,10 @@ def main(argv=None) -> int:
     print(f"Sin Skeptic : {sc['trades']} operaciones · {sc['rentabilidad_%']:+.1f}% · drawdown "
           f"{sc['max_drawdown_%']:.1f}% · acierto {sc['acierto_%']:.0f}%")
     print(f"Comprar y mantener (media): {estado['skeptic_saved']['buy_hold_pct']:+.1f}%")
+    cal = estado["calibration"]
+    if cal["n"]:
+        print(f"Máquina del tiempo: {cal['n']} casos, error de calibración {cal['error_pts']} puntos "
+              f"→ {'puede votar en el Skeptic' if cal['usable'] else 'solo informativa'}")
     print(f"Guardado en {salida}. Ábrelo en el panel con: python dashboard_server.py")
     return 0
 

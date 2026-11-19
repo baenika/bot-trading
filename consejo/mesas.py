@@ -25,6 +25,23 @@ MERCADOS = {
     "^GDAXI": "DAX",
 }
 
+# Búsqueda de noticias en GDELT para cada símbolo (frases entre comillas, OR entre paréntesis).
+NOTICIAS = {
+    "BTCUSDT": '(bitcoin OR "BTC price")',
+    "ETHUSDT": '(ethereum OR "ether price")',
+    "SPY": '("S&P 500" OR "Wall Street stocks")',
+    "QQQ": '(nasdaq OR "tech stocks")',
+    "DIA": '"Dow Jones"',
+    "IWM": '("Russell 2000" OR "small caps")',
+    "GLD": '("gold price" OR "gold prices")',
+    "SLV": '("silver price" OR "silver prices")',
+    "USO": '("oil price" OR "oil prices" OR "crude oil")',
+    "TLT": '("treasury yields" OR "bond yields")',
+    "EURUSD=X": '("euro dollar" OR "EUR/USD" OR "euro falls" OR "euro rises")',
+    "^IBEX": '("Ibex 35" OR "bolsa española")',
+    "^GDAXI": '("DAX index" OR "German stocks")',
+}
+
 # Ajustes que cambian por mesa (el resto sale de backtest.CONFIG_DEFECTO).
 AJUSTES = {
     "cripto": {"capital_inicial": 10000.0, "comision_pct": 0.10},
@@ -43,3 +60,8 @@ def archivo(simbolo: str, intervalo: str = "1h") -> str:
 def simbolo_de_archivo(nombre: str) -> str:
     base = nombre.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].split("-")[0]
     return base.replace("IDX_", "^").replace("_FX", "=X")
+
+
+def archivo_noticias(simbolo: str) -> str:
+    """Nombre del archivo de noticias de un símbolo dentro de datos/noticias/."""
+    return archivo(simbolo, "noticias").replace(".csv", ".json")
