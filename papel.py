@@ -5,7 +5,7 @@
     py papel.py --prueba-telegram          # cada bot saluda en el grupo
 
 - Precios: Binance (cripto) y Yahoo (mercados), públicos y sin cuenta.
-- Noticias: GDELT, las de las últimas 24 h, solo cuando el Scout da una alerta.
+- Noticias: Hacker News (y GDELT si responde), las de las últimas 24 h, solo cuando el Scout da una alerta.
 - Opera solo con velas CERRADAS y guarda todo en salida/papel_<mesa>.json.
 - El panel lo enseña en http://localhost:8000/?fuente=papel
 - Los 6 bots hablan en tu grupo de Telegram si existe telegram.json (ver consejo/telegram.py).
@@ -59,21 +59,40 @@ def solo_cerradas(vs: list[datos.Vela], duracion: timedelta, ahora: datetime) ->
 
 
 class NoticiasEnVivo(dict):
-    """Baja de GDELT los titulares de las últimas 24 h solo cuando News los pide."""
+    """Baja los titulares de las últimas 24 h solo cuando News los pide (Hacker News; GDELT si responde)."""
 
     def __init__(self, ahora: datetime):
         super().__init__()
         self.ahora = ahora
 
+    def _hn(self, s: str) -> list[dict] | None:
+        import descargar_noticias as dn
+        if s not in dn.HN_CONSULTAS:
+            return None
+        filas, desde = [], int((self.ahora - timedelta(days=1)).timestamp())
+        try:
+            for q in dn.HN_CONSULTAS[s]:
+                url = dn.HN_API + "?" + urllib.parse.urlencode({
+                    "query": f'"{q}"', "tags": "story", "hitsPerPage": 200, "typoTolerance": "false",
+                    "numericFilters": f"created_at_i>={desde}"})
+                filas += dn.hn_a_filas(json.loads(_get(url)), [q], min_puntos=3)
+        except Exception as e:  # noqa: BLE001 - sin noticias, News no opina
+            print(f"{s}: sin noticias de Hacker News ({e})")
+            return None
+        return filas
+
     def get(self, s, defecto=None):
-        if s not in self and s in mesas.NOTICIAS:
-            import descargar_noticias as dn
-            js = dn._pedir({"query": dn._consulta(s), "mode": "artlist", "format": "json",
-                            "maxrecords": 100, "timespan": "1d"}, reintentos=2)
-            filas = dn.titulares_a_filas(js) if js else []
+        if s not in self:
+            filas = self._hn(s)
+            if filas is None and s in mesas.NOTICIAS:
+                import descargar_noticias as dn
+                js = dn._pedir({"query": dn._consulta(s), "mode": "artlist", "format": "json",
+                                "maxrecords": 100, "timespan": "1d"}, reintentos=1)
+                filas = dn.titulares_a_filas(js) if js else None
             self[s] = news.Archivo.desde_json({
-                "simbolo": s, "titulares": filas, "dias": {},
-                "cubre": [[(self.ahora - timedelta(days=1)).isoformat(), self.ahora.isoformat()]] if js else []})
+                "simbolo": s, "titulares": filas or [], "dias": {},
+                "cubre": [[(self.ahora - timedelta(days=1)).isoformat(), self.ahora.isoformat()]]
+                if filas is not None else []})
         return super().get(s, defecto)
 
 

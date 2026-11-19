@@ -303,6 +303,7 @@ def test_papel_guarda_y_sigue(tmp_path, monkeypatch):
     monkeypatch.setattr(papel, "RAIZ", str(tmp_path))
     monkeypatch.setattr(papel, "velas_binance", lambda s, tf="1h", n=1000: todas[:corte["n"]] if s == "BTCUSDT" else [])
     monkeypatch.setattr(descargar_noticias, "_pedir", lambda *a, **k: None)
+    monkeypatch.setattr(papel.NoticiasEnVivo, "_hn", lambda self, s: None)
     (tmp_path / "salida").mkdir()
     cfg = {**backtest.CONFIG_DEFECTO, "modo": "paper", "caminos_ultima": 100, "caminos_backtest": 100}
     enviados = []
