@@ -40,6 +40,7 @@ CONFIG_DEFECTO = {
     "atr_vela_min": 2.0,
     "fomo_atr": 3.0,
     "pausa_tras_perdidas": 3,
+    "pausa_horas": 24,
     "fomo_modo": "esperar",       # "esperar": con FOMO solo se entra si retrocede; "vetar": no se entra
     "puntos_para_entrar": 2,
     "puntos_para_esperar": 1,
@@ -166,6 +167,7 @@ class Motor:
         self.casos: dict[str, list[dict]] = {s: [] for s in series}
         self.rechazadas: list[float] = []
         self.racha = 0
+        self.t_pausa = None                       # cuándo empezó la pausa por racha de pérdidas
         self.bots: dict[str, dict] = {}
         self.ultima: dict | None = None
         self.noticias = noticias or {}
@@ -200,6 +202,8 @@ class Motor:
         self.capital += neto
         r = neto / p["riesgo"] if p["riesgo"] else 0.0
         self.racha = self.racha + 1 if neto < 0 else 0
+        if self.racha == self.cfg["pausa_tras_perdidas"]:
+            self.t_pausa = t
         self.pnl_diario[t.strftime("%Y-%m-%d")] += neto
         self.operaciones.append({"symbol": s, "dir": p["dir"], "kind": p["kind"],
                                  "opened": str(p["opened"]), "closed": str(t), "entry": p["entry"],
@@ -251,6 +255,11 @@ class Motor:
         alerta = scout.escanear(ctx, i, cfg)
         if not alerta:
             return
+        # la pausa tras una racha de pérdidas dura un tiempo; después se vuelve a empezar de cero
+        # (si no, sin operaciones nuevas la racha nunca se reinicia y el bot se queda parado para siempre)
+        if self.racha >= cfg["pausa_tras_perdidas"] and self.t_pausa is not None and \
+                alerta.t - self.t_pausa >= timedelta(hours=cfg["pausa_horas"]):
+            self.racha, self.t_pausa = 0, None
         t = _fmt(alerta.t)
         h = 12
         ret_h = (ctx.velas[i + h].c / ctx.velas[i].c - 1) * 100 if i + h < len(ctx.velas) else None
@@ -362,6 +371,7 @@ class Motor:
                            for s, o in self.pendientes.items()},
             "operaciones": self.operaciones, "curva": self.curva, "pnl_diario": dict(self.pnl_diario),
             "decisiones": dict(self.decisiones), "rechazadas": self.rechazadas, "racha": self.racha,
+            "t_pausa": self.t_pausa.isoformat() if self.t_pausa else None,
             "parado": self.riesgo.parado, "bots": self.bots, "ultima": self.ultima,
             "visto": {s: self.ctx[s].velas[i].t.isoformat() for s, i in self.ultimo_i.items() if i >= 0},
         }
@@ -393,6 +403,7 @@ class Motor:
         self.decisiones = Counter(d.get("decisiones", {}))
         self.rechazadas = d.get("rechazadas", [])
         self.racha = d.get("racha", 0)
+        self.t_pausa = datetime.fromisoformat(d["t_pausa"]) if d.get("t_pausa") else None
         self.riesgo.parado = d.get("parado", False)
         self.bots = d.get("bots", {})
         self.ultima = d.get("ultima")

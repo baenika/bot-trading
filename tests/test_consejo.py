@@ -399,3 +399,16 @@ def test_fomo_no_persigue_espera_retroceso():
     normal = skeptic.decidir(ctx, a, p, {}, {"n": 0}, {}, {}, cfg)
     fomo = skeptic.decidir(ctx, a, p, {"fomo": True}, {"n": 0}, {}, {}, cfg)
     assert normal["decision"] == "COMPRAR" and fomo["decision"] == "ESPERAR"
+
+
+def test_pausa_por_racha_no_es_eterna():
+    series = {"BTCUSDT": datos.sinteticas("BTCUSDT", 600, 30000, semilla=2)}
+    m = backtest.Motor(series, {"caminos_backtest": 50, "caminos_ultima": 50, "pausa_horas": 24})
+    vs = series["BTCUSDT"]
+    m.racha, m.t_pausa = 3, vs[100].t
+    for i in range(101, 600):
+        m.paso("BTCUSDT", i)
+        if m.racha == 0:
+            break
+    # tras 24 h y en cuanto llega una alerta, la racha se reinicia
+    assert m.racha == 0 or all(scout.escanear(m.ctx["BTCUSDT"], k, m.cfg) is None for k in range(125, 600))
