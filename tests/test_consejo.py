@@ -379,3 +379,11 @@ def test_hn_a_filas():
     filas = dn.hn_a_filas({"hits": [{"title": "Bitcoin ETF approved", "created_at_i": 1704067200,
                                      "url": "https://example.com/a"}, {"title": "", "created_at_i": 1}]})
     assert len(filas) == 1 and filas[0]["t"].startswith("2024-01-01T00:00") and filas[0]["dominio"] == "example.com"
+
+
+def test_hn_filtra_ruido():
+    import descargar_noticias as dn
+    js = {"hits": [{"title": "Euro 2024 final", "created_at_i": 1704067200, "points": 50},
+                   {"title": "ECB cuts rates again", "created_at_i": 1704067200, "points": 50},
+                   {"title": "ECB holds", "created_at_i": 1704067200, "points": 1}]}
+    assert [x["titulo"] for x in dn.hn_a_filas(js, ["ecb"], min_puntos=3)] == ["ECB cuts rates again"]

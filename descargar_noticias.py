@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -188,18 +189,29 @@ HN_CONSULTAS = {
     "BTCUSDT": ["bitcoin", "btc"], "ETHUSDT": ["ethereum"],
     "SPY": ["S&P 500", "stock market"], "QQQ": ["nasdaq", "tech stocks"], "DIA": ["dow jones"],
     "IWM": ["russell 2000"], "GLD": ["gold price"], "SLV": ["silver price"], "USO": ["oil price"],
-    "TLT": ["treasury yields", "federal reserve"], "EURUSD=X": ["euro dollar", "ecb"],
+    "TLT": ["treasury yields", "federal reserve"],
+    "EURUSD=X": ["ecb", "eurozone", "euro exchange rate", "lagarde"],
 }
 
 
-def hn_a_filas(js: dict) -> list[dict]:
+def _en_titulo(titulo: str, terminos: list[str] | None) -> bool:
+    """El término tiene que estar en el titular como palabra o frase entera (Algolia busca de más)."""
+    if not terminos:
+        return True
+    t = " " + re.sub(r"[^a-z0-9&$ ]", " ", titulo.lower()) + " "
+    return any(f" {x.lower()} " in t for x in terminos)
+
+
+def hn_a_filas(js: dict, terminos: list[str] | None = None, min_puntos: int = 0) -> list[dict]:
     filas = []
     for h in (js or {}).get("hits", []) or []:
         titulo, t = (h.get("title") or "").strip(), h.get("created_at_i")
+        if (h.get("points") or 0) < min_puntos or not _en_titulo(titulo, terminos):
+            continue
         if titulo and t:
             filas.append({"t": datetime.fromtimestamp(int(t), tz=timezone.utc).isoformat(), "titulo": titulo,
                           "dominio": urllib.parse.urlparse(h.get("url") or "").netloc or "news.ycombinator.com",
-                          "url": h.get("url") or ""})
+                          "url": h.get("url") or "", "fuente": "hn"})
     return filas
 
 
@@ -210,6 +222,8 @@ def bajar_hn(simbolo: str, destino: str, desde: date, dias: int = 30) -> None:
         with open(ruta, encoding="utf-8") as f:
             d.update(json.load(f))
     d["fuente"] = ", ".join(sorted(set(filter(None, [d.get("fuente"), "Hacker News"]))))
+    # se rehace lo de Hacker News desde cero (por si había titulares de una búsqueda anterior)
+    d["titulares"] = [x for x in d["titulares"] if x.get("fuente") != "hn"]
     vistos = {(x["t"], x["titulo"]) for x in d["titulares"]}
     hechos = [list(c) for c in d["cubre"]]
     ahora = datetime.now(timezone.utc)
@@ -220,7 +234,8 @@ def bajar_hn(simbolo: str, destino: str, desde: date, dias: int = 30) -> None:
         for q in HN_CONSULTAS[simbolo]:
             for pagina in range(10):
                 url = HN_API + "?" + urllib.parse.urlencode({
-                    "query": q, "tags": "story", "hitsPerPage": 1000, "page": pagina,
+                    "query": f'"{q}"', "tags": "story", "hitsPerPage": 1000, "page": pagina,
+                    "typoTolerance": "false",
                     "numericFilters": f"created_at_i>={int(t.timestamp())},created_at_i<{int(fin.timestamp())}"})
                 try:
                     req = urllib.request.Request(url, headers={"User-Agent": UA})
@@ -229,7 +244,7 @@ def bajar_hn(simbolo: str, destino: str, desde: date, dias: int = 30) -> None:
                 except Exception as e:  # noqa: BLE001
                     print(f"   HN {simbolo} {t:%Y-%m}: {e}")
                     break
-                for x in hn_a_filas(js):
+                for x in hn_a_filas(js, [q], min_puntos=3):
                     if (x["t"], x["titulo"]) not in vistos:
                         vistos.add((x["t"], x["titulo"]))
                         d["titulares"].append(x)
