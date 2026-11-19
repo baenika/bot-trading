@@ -4,6 +4,7 @@
     python descargar_noticias.py mercados     # S&P 500, Nasdaq, oro, petróleo, IBEX...
     python descargar_noticias.py todo
     python descargar_noticias.py cripto --desde 2024-01-01 --dias 7
+    python descargar_noticias.py cripto --fuente hn     # Hacker News, si GDELT da 429
 
 GDELT (gdeltproject.org) es un archivo abierto de noticias de todo el mundo, sin
 cuenta ni clave. Por cada símbolo guarda:
@@ -178,6 +179,75 @@ def bajar(simbolo: str, destino: str, desde: date, dias: int) -> None:
               "Vuelve a lanzar el comando para reintentarlas.")
 
 
+# --- segunda fuente: Hacker News (API pública de Algolia, sin clave) -----------------------
+# Tiene histórico completo con fecha y hora exactas y límites generosos. Cubre bien
+# cripto, tecnología y macro; casi nada de oro, petróleo o la bolsa española.
+
+HN_API = "https://hn.algolia.com/api/v1/search_by_date"
+HN_CONSULTAS = {
+    "BTCUSDT": ["bitcoin", "btc"], "ETHUSDT": ["ethereum"],
+    "SPY": ["S&P 500", "stock market"], "QQQ": ["nasdaq", "tech stocks"], "DIA": ["dow jones"],
+    "IWM": ["russell 2000"], "GLD": ["gold price"], "SLV": ["silver price"], "USO": ["oil price"],
+    "TLT": ["treasury yields", "federal reserve"], "EURUSD=X": ["euro dollar", "ecb"],
+}
+
+
+def hn_a_filas(js: dict) -> list[dict]:
+    filas = []
+    for h in (js or {}).get("hits", []) or []:
+        titulo, t = (h.get("title") or "").strip(), h.get("created_at_i")
+        if titulo and t:
+            filas.append({"t": datetime.fromtimestamp(int(t), tz=timezone.utc).isoformat(), "titulo": titulo,
+                          "dominio": urllib.parse.urlparse(h.get("url") or "").netloc or "news.ycombinator.com",
+                          "url": h.get("url") or ""})
+    return filas
+
+
+def bajar_hn(simbolo: str, destino: str, desde: date, dias: int = 30) -> None:
+    ruta = os.path.join(destino, mesas.archivo_noticias(simbolo))
+    d = {"simbolo": simbolo, "titulares": [], "dias": {}, "cubre": []}
+    if os.path.exists(ruta):
+        with open(ruta, encoding="utf-8") as f:
+            d.update(json.load(f))
+    d["fuente"] = ", ".join(sorted(set(filter(None, [d.get("fuente"), "Hacker News"]))))
+    vistos = {(x["t"], x["titulo"]) for x in d["titulares"]}
+    hechos = [list(c) for c in d["cubre"]]
+    ahora = datetime.now(timezone.utc)
+    t = datetime(desde.year, desde.month, desde.day, tzinfo=timezone.utc)
+    while t < ahora:
+        fin = min(t + timedelta(days=dias), ahora)
+        n = 0
+        for q in HN_CONSULTAS[simbolo]:
+            for pagina in range(10):
+                url = HN_API + "?" + urllib.parse.urlencode({
+                    "query": q, "tags": "story", "hitsPerPage": 1000, "page": pagina,
+                    "numericFilters": f"created_at_i>={int(t.timestamp())},created_at_i<{int(fin.timestamp())}"})
+                try:
+                    req = urllib.request.Request(url, headers={"User-Agent": UA})
+                    with urllib.request.urlopen(req, timeout=60) as r:
+                        js = json.loads(r.read())
+                except Exception as e:  # noqa: BLE001
+                    print(f"   HN {simbolo} {t:%Y-%m}: {e}")
+                    break
+                for x in hn_a_filas(js):
+                    if (x["t"], x["titulo"]) not in vistos:
+                        vistos.add((x["t"], x["titulo"]))
+                        d["titulares"].append(x)
+                        n += 1
+                time.sleep(1)
+                if pagina + 1 >= js.get("nbPages", 0):
+                    break
+        if n:
+            hechos.append([t.isoformat(), fin.isoformat()])
+        print(f"   {simbolo} {t:%Y-%m-%d}: {n} titulares nuevos de Hacker News")
+        t = fin
+    d["titulares"].sort(key=lambda x: x["t"])
+    d["cubre"] = _juntar(hechos)
+    with open(ruta, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False)
+    print(f"{simbolo}: {len(d['titulares'])} titulares en total → {ruta}")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("mesa", choices=["cripto", "mercados", "todo"])
@@ -185,6 +255,8 @@ def main(argv=None) -> int:
     ap.add_argument("--dias", type=int, default=7, help="días por consulta de titulares (máx. 250 por consulta)")
     ap.add_argument("--simbolo", action="append", default=[], help="solo estos símbolos")
     ap.add_argument("--pausa", type=float, default=10.0, help="segundos entre consultas a GDELT")
+    ap.add_argument("--fuente", choices=["gdelt", "hn"], default="gdelt",
+                    help="gdelt (por defecto) o hn (Hacker News: histórico completo, sin límites estrictos)")
     a = ap.parse_args(argv)
     global PAUSA
     PAUSA = a.pausa
@@ -193,6 +265,13 @@ def main(argv=None) -> int:
     simbolos = a.simbolo or ((list(mesas.CRIPTO) if a.mesa in ("cripto", "todo") else [])
                              + (list(mesas.MERCADOS) if a.mesa in ("mercados", "todo") else []))
     for s in simbolos:
+        if a.fuente == "hn":
+            if s not in HN_CONSULTAS:
+                print(f"{s}: Hacker News no cubre este activo, lo salto")
+                continue
+            print(f"{s}: bajando titulares de Hacker News desde {a.desde}…")
+            bajar_hn(s, destino, date.fromisoformat(a.desde), 30)
+            continue
         if s not in mesas.NOTICIAS:
             print(f"{s}: no tiene búsqueda de noticias en consejo/mesas.py, lo salto")
             continue

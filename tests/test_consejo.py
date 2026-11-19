@@ -372,3 +372,10 @@ def test_memes_backtest_sobre_grabacion(tmp_path, monkeypatch):
 def test_memes_sin_grabacion_no_inventa(tmp_path):
     import memes
     assert memes.main(["backtest", "--carpeta", str(tmp_path)]) == 1
+
+
+def test_hn_a_filas():
+    import descargar_noticias as dn
+    filas = dn.hn_a_filas({"hits": [{"title": "Bitcoin ETF approved", "created_at_i": 1704067200,
+                                     "url": "https://example.com/a"}, {"title": "", "created_at_i": 1}]})
+    assert len(filas) == 1 and filas[0]["t"].startswith("2024-01-01T00:00") and filas[0]["dominio"] == "example.com"
