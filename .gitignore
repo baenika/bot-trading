@@ -6,3 +6,4 @@ datos/*.csv
 !datos/ejemplo.csv
 .env
 datos/noticias/
+telegram.json

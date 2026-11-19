@@ -1,7 +1,8 @@
 """Sirve el panel del Consejo en http://localhost:8000 (solo en tu ordenador).
 
 El panel pide `data?mesa=cripto`, `data?mesa=mercados` o `data?mesa=memes` y este servidor le
-devuelve `salida/estado_<mesa>.json`. Si no existe, el panel enseña sus
+devuelve `salida/estado_<mesa>.json`. Con `&fuente=papel` (abre http://localhost:8000/?fuente=papel)
+devuelve el modo papel en vivo, `salida/estado_papel_<mesa>.json`. Si no existe, el panel enseña sus
 datos de demostración.
 """
 
@@ -27,7 +28,8 @@ class Manejador(http.server.SimpleHTTPRequestHandler):
             mesa = q.get("mesa", ["cripto"])[0]
             if mesa not in ("cripto", "mercados", "memes"):
                 return self.send_error(400, "mesa desconocida")
-            ruta = os.path.join(RAIZ, "salida", f"estado_{mesa}.json")
+            papel = q.get("fuente", [""])[0] == "papel"
+            ruta = os.path.join(RAIZ, "salida", f"estado_{'papel_' if papel else ''}{mesa}.json")
             if not os.path.exists(ruta):
                 return self.send_error(404, "Sin datos: corre antes python run_backtest.py")
             with open(ruta, "rb") as f:

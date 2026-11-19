@@ -291,3 +291,39 @@ def test_gdelt_a_filas():
                                                    {"date": "20240115T120000Z", "value": 0}]}]})
     assert tono == {"2024-01-15": -1.0}
     assert dn._juntar([["b", "c"], ["a", "b"], ["d", "e"]]) == [["a", "c"], ["d", "e"]]
+
+
+# --- modo papel en vivo ----------------------------------------------------------------
+
+def test_papel_guarda_y_sigue(tmp_path, monkeypatch):
+    import descargar_noticias
+    import papel
+    todas = datos.sinteticas("BTCUSDT", 1600, 30000, semilla=3)
+    corte = {"n": 1200}
+    monkeypatch.setattr(papel, "RAIZ", str(tmp_path))
+    monkeypatch.setattr(papel, "velas_binance", lambda s, tf="1h", n=1000: todas[:corte["n"]] if s == "BTCUSDT" else [])
+    monkeypatch.setattr(descargar_noticias, "_pedir", lambda *a, **k: None)
+    (tmp_path / "salida").mkdir()
+    cfg = {**backtest.CONFIG_DEFECTO, "modo": "paper", "caminos_ultima": 100, "caminos_backtest": 100}
+    enviados = []
+    grupo = papel.Grupo(None)
+    grupo.enviar = lambda bot, txt: enviados.append((bot, txt))
+    ruta = str(tmp_path / "salida" / "papel_cripto.json")
+    papel.pasada("cripto", cfg, grupo, ruta)              # primera vez: solo empieza a vigilar
+    e1 = json.loads(open(ruta, encoding="utf-8").read())
+    assert e1["operaciones"] == [] and e1["visto"]["BTCUSDT"] == todas[1199].t.isoformat()
+    corte["n"] = 1600
+    papel.pasada("cripto", cfg, grupo, ruta)              # 400 velas nuevas
+    e2 = json.loads(open(ruta, encoding="utf-8").read())
+    assert e2["visto"]["BTCUSDT"] == todas[1599].t.isoformat()
+    assert e2["inicio"] == e1["inicio"]
+    assert sum(e2["decisiones"].values()) > 0 and enviados
+    panel = json.loads((tmp_path / "salida" / "estado_papel_cripto.json").read_text(encoding="utf-8"))
+    assert panel["source"] == "live" and panel["mode"] == "paper"
+
+
+def test_papel_quita_vela_abierta():
+    import papel
+    vs = datos.sinteticas("X", 5, semilla=1)
+    ahora = vs[-1].t + timedelta(minutes=30)
+    assert papel.solo_cerradas(vs, timedelta(hours=1), ahora) == vs[:-1]

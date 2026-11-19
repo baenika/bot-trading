@@ -26,4 +26,6 @@ Bot de trading multi-agente ("el Consejo") de David. Toda la documentación y lo
 - News nunca puede mirar titulares posteriores a la decisión (sin lookahead)
 - Backtest por mesa: `python run_backtest.py --mesa cripto` o `--mesa mercados`
 - Las mesas y sus símbolos están en `consejo/mesas.py`
-- Panel: `python dashboard_server.py` y abrir http://localhost:8000
+- Panel: `python dashboard_server.py` y abrir http://localhost:8000 (papel en vivo: `/?fuente=papel`)
+- Papel en vivo: `python papel.py --mesa cripto` (dinero ficticio; Telegram opcional con `telegram.json`, que nunca se sube)
+- El bot de ayer (Consejo v5, con Telegram y mesa de memes) está en la rama `consejo-v5-ayer`, carpeta `ayer/`

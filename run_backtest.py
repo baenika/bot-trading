@@ -98,6 +98,9 @@ def main(argv=None) -> int:
     print(f"Sin Skeptic : {sc['trades']} operaciones · {sc['rentabilidad_%']:+.1f}% · drawdown "
           f"{sc['max_drawdown_%']:.1f}% · acierto {sc['acierto_%']:.0f}%")
     print(f"Comprar y mantener (media): {estado['skeptic_saved']['buy_hold_pct']:+.1f}%")
+    print("Examen antes de pensar en dinero real (además: varias épocas y activos, y semanas en papel):")
+    for c in estado["exam"]:
+        print(f"  {'✅' if c['ok'] else '❌'} {c['criterio']}: {c['valor']}")
     cal = estado["calibration"]
     if cal["n"]:
         print(f"Máquina del tiempo: {cal['n']} casos, error de calibración {cal['error_pts']} puntos "

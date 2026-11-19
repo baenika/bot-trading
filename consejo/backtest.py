@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
 from . import maquina_tiempo, seguridad
@@ -165,7 +166,8 @@ class Motor:
         self.ultima: dict | None = None
         self.noticias = noticias or {}
         self.calibracion = Calibracion()
-        self.paso = _duracion(self.cfg["timeframe"])
+        self.duracion = _duracion(self.cfg["timeframe"])
+        self.ultimo_i: dict[str, int] = {}
 
     # --- ejecución simulada -------------------------------------------------
     def _coste(self, precio: float, tam: float) -> float:
@@ -184,7 +186,7 @@ class Motor:
         self.capital -= self._coste(precio, tam)
         self.abiertas[s] = {"symbol": s, "dir": dir_, "kind": tipo, "entry": precio, "stop": plan.stop,
                             "tp": plan.objetivo, "size": tam, "i": i, "opened": t,
-                            "riesgo": abs(precio - plan.stop) * tam}
+                            "riesgo": abs(precio - plan.stop) * tam, "t_i": t.isoformat()}
 
     def _cerrar(self, s, precio, motivo, t):
         p = self.abiertas.pop(s)
@@ -254,7 +256,7 @@ class Motor:
                                      plan.dir, horizonte=cfg["max_barras"], caminos=caminos, semilla=i)
         estudio = sentimental.estudio_historico(self.casos[s], alerta, i, h)
         self.casos[s].append({"i": i, "dir": alerta.dir, "fuerza": alerta.fuerza, "ret_h": ret_h})
-        cierre = alerta.t + self.paso           # la decisión se toma al cierre de la vela
+        cierre = alerta.t + self.duracion           # la decisión se toma al cierre de la vela
         noticias = news.opinar(alerta, ctx, self.noticias.get(s), cierre, cfg)
         senti = sentimental.opinar(ctx, alerta, self.racha, estudio, sim, cfg, noticias)
 
@@ -262,7 +264,7 @@ class Motor:
         self.calibracion.avanzar(cierre)
         ok = toca_objetivo(ctx, i, plan, cfg["max_barras"])
         if ok is not None and sim.get("paths"):
-            self.calibracion.anotar(ctx.velas[i + cfg["max_barras"]].t + self.paso, sim["p_tp"], ok)
+            self.calibracion.anotar(ctx.velas[i + cfg["max_barras"]].t + self.duracion, sim["p_tp"], ok)
         err = self.calibracion.error()
         calibrada = (err is not None and err < cfg["calibracion_max_error"]
                      and self.calibracion.n >= cfg["calibracion_min_casos"])
@@ -276,9 +278,9 @@ class Motor:
         self.decisiones[dec["decision"]] += 1
 
         if dec["decision"] in ("COMPRAR", "VENDER"):
-            self.pendientes[s] = {"tipo": "mercado", "plan": plan, "i": i}
+            self.pendientes[s] = {"tipo": "mercado", "plan": plan, "i": i, "t_i": ctx.velas[i].t.isoformat()}
         elif dec["decision"] == "ESPERAR":
-            self.pendientes[s] = {"tipo": "retroceso", "plan": plan, "i": i}
+            self.pendientes[s] = {"tipo": "retroceso", "plan": plan, "i": i, "t_i": ctx.velas[i].t.isoformat()}
         else:
             r = resultado_r(ctx, i, plan, cfg["max_barras"])
             if r is not None and not (alerta.dir == "short" and not cfg["permitir_cortos"]):
@@ -298,28 +300,93 @@ class Motor:
                        "temperature": senti["temperatura"], "sim": sim}
 
     # --- bucle principal ------------------------------------------------------
+    def paso(self, s: str, i: int, ultima_vela: bool = False) -> None:
+        """Procesa la vela i del símbolo s: gestiona posiciones, órdenes y consulta al Consejo."""
+        t = self.ctx[s].velas[i].t
+        dia = t.date()
+        if dia != self.dia:
+            self.dia, self.inicio_dia = dia, self.capital
+        self._gestionar(s, i)
+        self._pendiente(s, i)
+        self._consejo(s, i, ultima_vela)
+        self.pico = max(self.pico, self.capital)
+        self.ultimo_i[s] = i
+        if not self.riesgo.parado:
+            self.riesgo.revisar_cuenta(self.capital, self.pico)
+            if self.riesgo.parado:  # corte de drawdown: se cierra todo y se anula lo pendiente
+                self.pendientes.clear()
+                for sim in list(self.abiertas):
+                    v = self.ctx[sim].velas[self.ultimo_i.get(sim, i)]
+                    self._cerrar(sim, v.c, "corte de drawdown", v.t)
+
+    def precalentar(self, s: str, hasta: int) -> None:
+        """Rellena el estudio histórico de Sentimental con las alertas pasadas, sin operar."""
+        ctx, h = self.ctx[s], 12
+        self.casos[s] = []
+        for i in range(hasta + 1):
+            a = scout.escanear(ctx, i, self.cfg)
+            if a:
+                ret_h = (ctx.velas[i + h].c / ctx.velas[i].c - 1) * 100 if i + h < len(ctx.velas) else None
+                self.casos[s].append({"i": i, "dir": a.dir, "fuerza": a.fuerza, "ret_h": ret_h})
+
     def correr(self) -> "Motor":
         eventos = sorted((v.t, s, i) for s, c in self.ctx.items() for i, v in enumerate(c.velas))
         ultimo_t = eventos[-1][0] if eventos else None
-        ultimo_i: dict[str, int] = {}
         for n, (t, s, i) in enumerate(eventos):
-            dia = t.date()
-            if dia != self.dia:
-                self.dia, self.inicio_dia = dia, self.capital
-            self._gestionar(s, i)
-            self._pendiente(s, i)
-            self._consejo(s, i, ultima_vela=(t == ultimo_t))
-            self.pico = max(self.pico, self.capital)
-            ultimo_i[s] = i
-            if not self.riesgo.parado:
-                self.riesgo.revisar_cuenta(self.capital, self.pico)
-                if self.riesgo.parado:  # corte de drawdown: se cierra todo y se anula lo pendiente
-                    self.pendientes.clear()
-                    for sim in list(self.abiertas):
-                        v = self.ctx[sim].velas[ultimo_i.get(sim, i)]
-                        self._cerrar(sim, v.c, "corte de drawdown", v.t)
+            self.paso(s, i, ultima_vela=(t == ultimo_t))
             if n % (10 * len(self.ctx)) == 0 or t == ultimo_t:
                 self.curva.append((_fmt(t), round(self.capital, 2)))
+        return self
+
+    # --- guardar y recuperar el estado (para el modo papel en vivo) -----------
+    def exportar(self) -> dict:
+        def pos(p):
+            return {**p, "opened": p["opened"].isoformat(), "i": None}
+        return {
+            "capital": self.capital, "pico": self.pico, "inicio_dia": self.inicio_dia,
+            "dia": self.dia.isoformat() if self.dia else None,
+            "abiertas": {s: pos(p) for s, p in self.abiertas.items()},
+            "pendientes": {s: {"tipo": o["tipo"], "plan": asdict(o["plan"]), "t_i": o["t_i"]}
+                           for s, o in self.pendientes.items()},
+            "operaciones": self.operaciones, "curva": self.curva, "pnl_diario": dict(self.pnl_diario),
+            "decisiones": dict(self.decisiones), "rechazadas": self.rechazadas, "racha": self.racha,
+            "parado": self.riesgo.parado, "bots": self.bots, "ultima": self.ultima,
+            "visto": {s: self.ctx[s].velas[i].t.isoformat() for s, i in self.ultimo_i.items() if i >= 0},
+        }
+
+    def _indice(self, s: str, t_iso: str) -> int:
+        """Índice de la vela con esa fecha en la serie actual (o uno muy atrás si ya no está)."""
+        t = datetime.fromisoformat(t_iso)
+        vs = self.ctx[s].velas
+        for k in range(len(vs) - 1, -1, -1):
+            if vs[k].t <= t:
+                return k
+        return -10 ** 6
+
+    def restaurar(self, d: dict) -> "Motor":
+        from datetime import date
+        self.capital, self.pico, self.inicio_dia = d["capital"], d["pico"], d["inicio_dia"]
+        self.dia = date.fromisoformat(d["dia"]) if d.get("dia") else None
+        self.abiertas = {}
+        for s, p in d.get("abiertas", {}).items():
+            if s in self.ctx:
+                self.abiertas[s] = {**p, "opened": datetime.fromisoformat(p["opened"]),
+                                    "i": self._indice(s, p["t_i"])}
+        self.pendientes = {s: {"tipo": o["tipo"], "plan": charts.Plan(**o["plan"]), "i": self._indice(s, o["t_i"]),
+                               "t_i": o["t_i"]}
+                           for s, o in d.get("pendientes", {}).items() if s in self.ctx}
+        self.operaciones = d.get("operaciones", [])
+        self.curva = [tuple(x) for x in d.get("curva", [])]
+        self.pnl_diario = Counter(d.get("pnl_diario", {}))
+        self.decisiones = Counter(d.get("decisiones", {}))
+        self.rechazadas = d.get("rechazadas", [])
+        self.racha = d.get("racha", 0)
+        self.riesgo.parado = d.get("parado", False)
+        self.bots = d.get("bots", {})
+        self.ultima = d.get("ultima")
+        for s, t in d.get("visto", {}).items():
+            if s in self.ctx:
+                self.ultimo_i[s] = self._indice(s, t)
         return self
 
     # --- resultados -------------------------------------------------------------
@@ -356,12 +423,31 @@ def _comprar_y_mantener(series: dict) -> float:
     return sum(rs) / len(rs) if rs else 0.0
 
 
+def examen(st: dict, comprar_y_mantener: float) -> list[dict]:
+    """Los criterios de David antes de plantearse siquiera el dinero real (del Consejo v5)."""
+    return [
+        {"criterio": "100 operaciones o más", "ok": st["trades"] >= 100, "valor": st["trades"]},
+        {"criterio": "profit factor mayor de 1,3", "ok": st["profit_factor"] > 1.3,
+         "valor": round(st["profit_factor"], 2) if math.isfinite(st["profit_factor"]) else 999},
+        {"criterio": "drawdown menor del 20 %", "ok": st["max_dd_pct"] > -20, "valor": round(st["max_dd_pct"], 1)},
+        {"criterio": "gana a comprar y mantener", "ok": st["return_pct"] > comprar_y_mantener,
+         "valor": f"{st['return_pct']:+.1f}% frente a {comprar_y_mantener:+.1f}%"},
+    ]
+
+
 def ejecutar(series: dict, cfg: dict | None = None, fuente: str = "backtest", periodo: str | None = None,
              noticias: dict | None = None) -> dict:
     """Corre el Consejo y la versión sin Skeptic, y devuelve el JSON del panel."""
     m = Motor(series, cfg, noticias=noticias).correr()
     sin = Motor(series, cfg, con_skeptic=False, noticias=noticias).correr()
-    st, sc = m.estadisticas(), sin.estadisticas()
+    return estado_panel(m, series, fuente, periodo, sin, noticias)
+
+
+def estado_panel(m: "Motor", series: dict, fuente: str, periodo: str | None, sin: "Motor | None" = None,
+                 noticias: dict | None = None) -> dict:
+    """JSON del panel a partir de un motor (y, si hay, de su versión sin Skeptic)."""
+    st = m.estadisticas()
+    sc = sin.estadisticas() if sin else None
     ultimo = m.curva[-1][0] if m.curva else None
     hoy = ultimo[:10] if ultimo else None
     pf = lambda x: round(x, 3) if math.isfinite(x) else 999.0
@@ -379,7 +465,7 @@ def ejecutar(series: dict, cfg: dict | None = None, fuente: str = "backtest", pe
         "day_start": m.inicio_dia,
         "today_pnl": m.pnl_diario.get(hoy, 0.0) if hoy else 0.0,
         "curve": m.curva,
-        "compare_curve": sin.curva,
+        "compare_curve": sin.curva if sin else None,
         "daily_pnl": sorted(([d, round(x, 2)] for d, x in m.pnl_diario.items()))[-30:],
         "positions": [{**p, "opened": str(p["opened"])} for p in m.abiertas.values()],
         "trades": list(reversed(m.operaciones))[:30],
@@ -389,6 +475,7 @@ def ejecutar(series: dict, cfg: dict | None = None, fuente: str = "backtest", pe
         "bots": m.bots,
         "last_decision": m.ultima,
         "decisions": dict(m.decisiones),
+        "exam": examen(st, _comprar_y_mantener(series)),
         "calibration": m.calibracion.resumen(m.cfg["calibracion_max_error"], m.cfg["calibracion_min_casos"]),
         "news_coverage": {s: len(a.titulares) for s, a in (noticias or {}).items()},
         "skeptic_saved": {
@@ -402,5 +489,5 @@ def ejecutar(series: dict, cfg: dict | None = None, fuente: str = "backtest", pe
             "capital_final": sin.capital, "rentabilidad_%": sc["return_pct"], "max_drawdown_%": sc["max_dd_pct"],
             "trades": sc["trades"], "sharpe": sc["sharpe"], "acierto_%": sc["win_rate"], "R_medio": sc["avg_R"],
             "profit_factor": pf(sc["profit_factor"]), "mejor_trade": sc["best"], "peor_trade": sc["worst"],
-        },
+        } if sin else None,
     }

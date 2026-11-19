@@ -41,6 +41,22 @@ Sin datos reales el backtest no corre. Los datos inventados solo existen para pr
 
 Los ajustes están en `config.example.json`. Cópialo y pásalo con `--config mi_config.json`.
 
+## Modo papel en vivo y Telegram
+
+`py papel.py --mesa cripto` vigila el mercado de verdad cada 5 minutos con **dinero ficticio**. Solo usa velas cerradas, busca noticias de las últimas 24 h cuando el Scout da una alerta y guarda el estado en `salida/papel_cripto.json`. Si se apaga, al volver sigue donde lo dejó. Se ve en el panel en http://localhost:8000/?fuente=papel.
+
+Para que los 6 bots hablen en un grupo de Telegram, crea `telegram.json` junto a `papel.py` (no se sube a GitHub):
+
+```json
+{"chat_id": "-100…", "tokens": {"scout": "…", "news": "…", "chart": "…", "sentimental": "…", "skeptic": "…", "risk": "…"}}
+```
+
+Prueba los bots con `py papel.py --prueba-telegram`. Sin ese archivo, la conversación sale por la consola. Los bots solo envían mensajes: no hay órdenes ni dinero.
+
+## Examen antes de pensar en dinero real
+
+El backtest lo comprueba solo: 100 operaciones o más, profit factor mayor de 1,3, drawdown menor del 20 % y ganar a comprar y mantener. Además tiene que funcionar en varias épocas y activos, y aguantar varias semanas en papel. Aun así, el dinero real solo se activa si David lo pide por escrito.
+
 ## Cómo leer los resultados
 
 - El panel compara el Consejo **con** Skeptic, **sin** Skeptic y **comprar y mantener**.
