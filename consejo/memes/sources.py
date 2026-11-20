@@ -124,3 +124,20 @@ class RugCheck:
         out["rugged"] = bool(d.get("rugged")) if "rugged" in d else None
         self.cache[mint] = out
         return out
+
+    def poseedores(self, mint: str) -> dict:
+        """{dueño: % del suministro} de los mayores poseedores, SIN caché (para ver quién vende o compra).
+        Quita pools y cuentas conocidas de programas (knownAccounts de RugCheck). Si falla, lanza la excepción."""
+        d = _get(f"{RC}/tokens/{mint}/report", timeout=20)
+        conocidas = set((d.get("knownAccounts") or {}).keys())
+        for m in d.get("markets") or []:
+            conocidas.update(x for x in (m.get("pubkey"), m.get("liquidityA"), m.get("liquidityB"),
+                                         m.get("liquidityAAccount"), m.get("liquidityBAccount")) if x)
+        out = {}
+        for h in (d.get("topHolders") or [])[:10]:
+            dueno, pct = h.get("owner"), _f(h.get("pct"))
+            if not dueno or pct is None or dueno in conocidas or h.get("address") in conocidas:
+                continue
+            out[dueno] = out.get(dueno, 0.0) + pct
+        return out
+

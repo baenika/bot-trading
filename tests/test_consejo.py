@@ -764,3 +764,19 @@ def test_examen_sin_operaciones_y_titulos_rss_limpios():
     ex = examen({"trades": 0, "profit_factor": 0.0, "max_dd_pct": 0.0, "return_pct": 0.0}, -2.1)
     assert all(x["ok"] in (None, False) for x in ex) and ex[3]["ok"] is None
     assert dn.limpiar_titulo("�​Why higher  rates ") == "Why higher rates"
+
+
+def test_ballenas_con_rugcheck_quita_pools(monkeypatch, tmp_path):
+    from consejo.memes import sources
+    from consejo.memes.ballenas import Ballenas
+    informe = {"knownAccounts": {"POOLOWNER": {"type": "AMM"}}, "markets": [{"liquidityA": "VAULT"}],
+               "topHolders": [{"owner": "POOLOWNER", "address": "x", "pct": 40},
+                              {"owner": "Z", "address": "VAULT", "pct": 20},
+                              {"owner": "A", "address": "a1", "pct": 12}, {"owner": "A", "address": "a2", "pct": 3}]}
+    monkeypatch.setattr(sources, "_get", lambda url, timeout=15: informe)
+    assert sources.RugCheck().poseedores("M") == {"A": 15.0}
+    b = Ballenas(str(tmp_path / "b.json"), rpc=None, fuente_poseedores=sources.RugCheck().poseedores)
+    b.pasada({"M": "X"}, ahora=1.0, forzar=True)
+    informe["topHolders"][2]["pct"] = 2
+    ev = b.pasada({"M": "X"}, ahora=1000.0)
+    assert [x["tipo"] for x in ev] == ["venta"]

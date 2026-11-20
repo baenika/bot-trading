@@ -76,10 +76,11 @@ def grabar(params: dict, cada: int, una_vez: bool, grupo: Grupo) -> None:
         return s
 
     from consejo.avisos import Avisador
-    from consejo.memes.ballenas import Ballenas
+    from consejo.memes.ballenas import Ballenas, frenado_si_429
     avisos = Avisador(grupo, "memes")
     avisos.version()
-    ballenas = Ballenas(os.path.join(r["grabacion"], "ballenas.json"), pausa_s=2.0)
+    ballenas = Ballenas(os.path.join(r["grabacion"], "ballenas.json"), pausa_s=2.0,
+                        fuente_poseedores=frenado_si_429(rc.poseedores))
     hilo = None
     while True:
         try:
@@ -244,7 +245,7 @@ def backtest(params: dict, grid: bool, carpeta: str) -> int:
 
 def ballena(resto: list[str], ruta: str) -> int:
     import re
-    from consejo.memes.ballenas import Ballenas
+    from consejo.memes.ballenas import Ballenas, frenado_si_429
     b = Ballenas(ruta)
     orden = (resto or ["lista"])[0].lower()
     if orden in ("añadir", "anadir", "quitar"):

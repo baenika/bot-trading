@@ -3,7 +3,9 @@
 Dos vigilancias:
 
 1. Monedas: para cada moneda que vigila la mesa (abiertas en papel y las que pasaron el Scout),
-   mira los 10 mayores poseedores (getTokenLargestAccounts) y lo compara con la pasada anterior.
+   mira los 10 mayores poseedores y lo compara con la pasada anterior. En memes.py se leen del
+   informe público de RugCheck (que los saca de la blockchain), porque el RPC público de Solana
+   corta getTokenLargestAccounts con 429 enseguida.
    • 🐋🔴 un gordo vende de golpe (≥ `venta_pct` % del suministro)  → posible salida antes de un rug
    • 🐋🟢 aparece o crece un gordo (≥ `compra_pct` % del suministro) → compra fuerte
    • ⚠️ los 10 mayores (sin contar la pool) tienen ≥ `concentracion_pct` % → riesgo de que la tiren
@@ -44,6 +46,18 @@ class Frenado(RuntimeError):
     """El RPC público dijo «demasiadas peticiones» (429): se deja para la pasada siguiente."""
 
 
+def frenado_si_429(fn):
+    """Envuelve una fuente HTTP para que un 429 cuente como Frenado (espera progresiva)."""
+    def f(*a, **k):
+        try:
+            return fn(*a, **k)
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                raise Frenado("la fuente pide ir más despacio (429)") from e
+            raise
+    return f
+
+
 def rpc_publico(metodo: str, params: list, url: str = RPC, timeout: int = 20):
     if metodo not in LECTURA:
         raise SoloLectura(f"Método '{metodo}' no permitido: las ballenas solo leen la blockchain.")
@@ -69,8 +83,11 @@ def _corta(x: str) -> str:
 class Ballenas:
     def __init__(self, ruta: str, rpc=rpc_publico, venta_pct: float = 2.0, compra_pct: float = 2.0,
                  concentracion_pct: float = 50.0, max_monedas: int = 5, max_wallets: int = 10,
-                 cada_s: int = 300, dias_auto: float = 7.0, pausa_s: float = 0.0):
+                 cada_s: int = 300, dias_auto: float = 7.0, pausa_s: float = 0.0, fuente_poseedores=None):
         self.ruta, self.rpc_crudo, self.pausa = ruta, rpc, pausa_s
+        # quién tiene cada moneda: por defecto el RPC; en memes.py, RugCheck (el RPC público limita mucho
+        # getTokenLargestAccounts). Debe devolver {dueño: % del suministro} sin pools.
+        self.fuente_poseedores = fuente_poseedores
         self.espera = cada_s           # sube si el RPC frena (429) y vuelve a cada_s cuando responde
         self.venta, self.compra, self.conc = venta_pct, compra_pct, concentracion_pct
         self.max_monedas, self.max_wallets, self.cada, self.dias_auto = max_monedas, max_wallets, cada_s, dias_auto
@@ -104,6 +121,10 @@ class Ballenas:
 
     def poseedores(self, mint: str, excluir: set) -> dict:
         """{dueño: % del suministro} de los 10 mayores, sin pools ni programas."""
+        if self.fuente_poseedores:
+            if self.pausa:
+                time.sleep(self.pausa)
+            return {w: p for w, p in self.fuente_poseedores(mint).items() if w not in NO_BALLENA and w not in excluir}
         sup = self.rpc("getTokenSupply", [mint])["value"]
         total = float(sup.get("uiAmount") or 0)
         if total <= 0:
