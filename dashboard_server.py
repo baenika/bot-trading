@@ -1,5 +1,10 @@
 """Sirve el panel del Consejo en http://localhost:8000 (solo en tu ordenador).
 
+    py dashboard_server.py            # solo este ordenador
+    py dashboard_server.py --red      # también el móvil en el mismo wifi (http://IP-de-la-torre:8000)
+
+El panel solo LEE resultados en papel: no tiene botones que operen ni muestra claves.
+
 El panel pide `data?mesa=cripto`, `data?mesa=mercados` o `data?mesa=memes` y este servidor le
 devuelve `salida/estado_<mesa>.json`. Con `&fuente=papel` (abre http://localhost:8000/?fuente=papel)
 devuelve el modo papel en vivo, `salida/estado_papel_<mesa>.json`. Si no existe, el panel enseña sus
@@ -44,10 +49,27 @@ class Manejador(http.server.SimpleHTTPRequestHandler):
         return super().do_GET()
 
 
-def main():
-    puerto = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", puerto), Manejador)
-    print(f"Panel en http://localhost:{puerto}  (Ctrl+C para parar)")
+def ip_local() -> str:
+    """IP de este ordenador en la red de casa (no envía nada: solo pregunta al sistema la ruta)."""
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("192.168.1.1", 9))
+        return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
+def main(argv=None):
+    args = sys.argv[1:] if argv is None else argv
+    red = "--red" in args
+    nums = [x for x in args if x.isdigit()]
+    puerto = int(nums[0]) if nums else 8000
+    srv = http.server.ThreadingHTTPServer(("0.0.0.0" if red else "127.0.0.1", puerto), Manejador)
+    print(f"Panel en http://localhost:{puerto}" + (f" y en el móvil (mismo wifi) http://{ip_local()}:{puerto}"
+                                                   if red else "") + "  (Ctrl+C para parar)")
     srv.serve_forever()
 
 

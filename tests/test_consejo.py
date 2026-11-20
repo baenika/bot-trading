@@ -594,3 +594,33 @@ def test_mando_de_telegram_solo_obedece_a_tu_chat(tmp_path, monkeypatch):
     g.silencio = False
     g.conversacion([("scout", "a"), ("skeptic", "b")])
     assert len(enviados) == 1 and "Scout" in enviados[0] and "Skeptic" in enviados[0]
+
+
+def test_operaciones_guardan_ficha_y_grafico_del_panel():
+    series = {"BTCUSDT": datos.sinteticas("BTCUSDT", 3000, 30000, semilla=1)}
+    cfg = {**backtest.CONFIG_DEFECTO, "caminos_backtest": 200}
+    m = backtest.Motor(series, cfg).correr()
+    assert m.operaciones and all("score" in o["ficha"] and o["usd"] > 0 for o in m.operaciones)
+    g = backtest.grafico(m, series, 500)["BTCUSDT"]
+    assert len(g["candles"]) == 500 and all("T" in t["opened"] for t in g["trades"])
+    copia = backtest.Motor(series, cfg).restaurar(json.loads(json.dumps(m.exportar(), default=str)))
+    assert copia.operaciones[0]["ficha"] == m.operaciones[0]["ficha"]
+
+
+def test_autoajuste_solo_acepta_lo_permitido_y_mide_tramos(tmp_path, monkeypatch):
+    import aprender
+    monkeypatch.setattr(aprender, "RAIZ", str(tmp_path))
+    (tmp_path / "salida").mkdir()
+    (tmp_path / "salida" / "config_auto_cripto.json").write_text(json.dumps(
+        {"parametros": {"stop_atr": 2.0, "risk_per_trade_pct": 50, "rr_objetivo": 9}}), encoding="utf-8")
+    assert aprender.cargar_auto("cripto") == {"stop_atr": 2.0}       # nada fuera de lista ni de rango
+    ops = [{"pnl": 100, "R": 1, "closed": "2024-01-02"}, {"pnl": -50, "R": -0.5, "closed": "2024-01-03"}]
+    st = aprender.stats_ops(ops, 10000)
+    assert st["n"] == 2 and abs(st["pf"] - 2) < 1e-9 and abs(st["ret"] - 0.5) < 1e-9 and st["dd"] < 0
+    assert not aprender.mejor_que({**st, "n": 5}, {"n": 50, "pf": 1, "ret": 0})   # pocas operaciones: no
+    serie = {"BTCUSDT": datos.sinteticas("BTCUSDT", 3000, 30000, semilla=1)}
+    corte = serie["BTCUSDT"][2000].t
+    cfg = {**backtest.CONFIG_DEFECTO, "caminos_backtest": 100}
+    a, b = aprender.evaluar(serie, cfg, {}, None, corte), aprender.evaluar(serie, cfg, {}, corte, None)
+    assert a["n"] + b["n"] >= 1
+    assert "pocas" in "\n".join(aprender.lecciones([{"R": 1, "ficha": {"score": 2.2, "moving": True}}]))

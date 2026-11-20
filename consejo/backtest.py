@@ -191,7 +191,7 @@ class Motor:
     def _coste(self, precio: float, tam: float) -> float:
         return precio * tam * self.cfg["comision_pct"] / 100
 
-    def _abrir(self, s, i, dir_, precio, plan, tipo, t):
+    def _abrir(self, s, i, dir_, precio, plan, tipo, t, ficha=None):
         ok = self.riesgo.aprobar(self.capital, self.inicio_dia, len(self.abiertas), plan, s in self.abiertas)
         self.bots["risk"] = {"time": _fmt(t), "text": ok["texto"]}
         if not ok["ok"]:
@@ -204,7 +204,8 @@ class Motor:
         self.capital -= self._coste(precio, tam)
         self.abiertas[s] = {"symbol": s, "dir": dir_, "kind": tipo, "entry": precio, "stop": plan.stop,
                             "tp": plan.objetivo, "size": tam, "i": i, "opened": t,
-                            "riesgo": abs(precio - plan.stop) * tam, "t_i": t.isoformat()}
+                            "riesgo": abs(precio - plan.stop) * tam, "t_i": t.isoformat(),
+                            "usd": precio * tam, "ficha": ficha or {}}
 
     def _cerrar(self, s, precio, motivo, t):
         p = self.abiertas.pop(s)
@@ -219,7 +220,9 @@ class Motor:
         self.pnl_diario[t.strftime("%Y-%m-%d")] += neto
         self.operaciones.append({"symbol": s, "dir": p["dir"], "kind": p["kind"],
                                  "opened": str(p["opened"]), "closed": str(t), "entry": p["entry"],
-                                 "exit": precio, "pnl": neto, "R": r, "reason": motivo})
+                                 "exit": precio, "pnl": neto, "R": r, "reason": motivo, "stop": p["stop"],
+                                 "tp": p["tp"], "size": p["size"], "usd": p.get("usd", p["entry"] * p["size"]),
+                                 "ficha": p.get("ficha", {})})
 
     def _gestionar(self, s, i):
         p = self.abiertas.get(s)
@@ -251,13 +254,13 @@ class Motor:
             del self.pendientes[s]
             desl = self.cfg["deslizamiento_pct"] / 100
             precio = v.o * (1 + desl if o["plan"].dir == "long" else 1 - desl)
-            self._abrir(s, i, o["plan"].dir, precio, o["plan"], "mercado", v.t)
+            self._abrir(s, i, o["plan"].dir, precio, o["plan"], "mercado", v.t, o.get("ficha"))
         else:  # retroceso: orden límite al precio de espera
             plan = o["plan"]
             toca = v.l <= plan.precio_espera if plan.dir == "long" else v.h >= plan.precio_espera
             if toca:
                 del self.pendientes[s]
-                self._abrir(s, i, plan.dir, plan.precio_espera, plan, "retroceso", v.t)
+                self._abrir(s, i, plan.dir, plan.precio_espera, plan, "retroceso", v.t, o.get("ficha"))
             elif i - o["i"] >= self.cfg["espera_barras"]:
                 del self.pendientes[s]
 
@@ -328,10 +331,18 @@ class Motor:
         if not dec["vetoes"]:
             self.puntos[round(dec["score"])] += 1
 
+        # ficha: lo que vio el Consejo al decidir (se guarda con la operación para aprender de ella)
+        ficha = {"decision": dec["decision"], "score": dec["score"], "pros": dec["pros"][:6], "cons": dec["cons"][:6],
+                 "fuerza": alerta.fuerza, "rr": round(plan.rr, 2), "temperatura": senti.get("temperatura"),
+                 "fomo": bool(senti.get("fomo")), "moving": bool(noticias.get("moving")),
+                 "etiquetas": noticias.get("etiquetas", []), "p_tp_sim": sim.get("p_tp"),
+                 "sim_calibrada": calibrada, "p_tp_kronos": (kron or {}).get("p_tp"), "hora_utc": alerta.t.hour}
         if dec["decision"] in ("COMPRAR", "VENDER"):
-            self.pendientes[s] = {"tipo": "mercado", "plan": plan, "i": i, "t_i": ctx.velas[i].t.isoformat()}
+            self.pendientes[s] = {"tipo": "mercado", "plan": plan, "i": i, "t_i": ctx.velas[i].t.isoformat(),
+                                  "ficha": ficha}
         elif dec["decision"] == "ESPERAR":
-            self.pendientes[s] = {"tipo": "retroceso", "plan": plan, "i": i, "t_i": ctx.velas[i].t.isoformat()}
+            self.pendientes[s] = {"tipo": "retroceso", "plan": plan, "i": i, "t_i": ctx.velas[i].t.isoformat(),
+                                  "ficha": ficha}
         else:
             r = resultado_r(ctx, i, plan, cfg["max_barras"])
             if r is not None and not (alerta.dir == "short" and not cfg["permitir_cortos"]):
@@ -397,7 +408,7 @@ class Motor:
             "capital": self.capital, "pico": self.pico, "inicio_dia": self.inicio_dia,
             "dia": self.dia.isoformat() if self.dia else None,
             "abiertas": {s: pos(p) for s, p in self.abiertas.items()},
-            "pendientes": {s: {"tipo": o["tipo"], "plan": asdict(o["plan"]), "t_i": o["t_i"]}
+            "pendientes": {s: {"tipo": o["tipo"], "plan": asdict(o["plan"]), "t_i": o["t_i"], "ficha": o.get("ficha", {})}
                            for s, o in self.pendientes.items()},
             "operaciones": self.operaciones, "curva": self.curva, "pnl_diario": dict(self.pnl_diario),
             "decisiones": dict(self.decisiones), "rechazadas": self.rechazadas, "racha": self.racha,
@@ -425,7 +436,7 @@ class Motor:
                 self.abiertas[s] = {**p, "opened": datetime.fromisoformat(p["opened"]),
                                     "i": self._indice(s, p["t_i"])}
         self.pendientes = {s: {"tipo": o["tipo"], "plan": charts.Plan(**o["plan"]), "i": self._indice(s, o["t_i"]),
-                               "t_i": o["t_i"]}
+                               "t_i": o["t_i"], "ficha": o.get("ficha", {})}
                            for s, o in d.get("pendientes", {}).items() if s in self.ctx}
         self.operaciones = d.get("operaciones", [])
         self.curva = [tuple(x) for x in d.get("curva", [])]
@@ -496,6 +507,32 @@ def ejecutar(series: dict, cfg: dict | None = None, fuente: str = "backtest", pe
     return estado_panel(m, series, fuente, periodo, sin, noticias)
 
 
+def _iso(t) -> str:
+    return (t if isinstance(t, str) else t.isoformat()).replace(" ", "T")
+
+
+def grafico(m: "Motor", series: dict, max_velas: int = 1500) -> dict:
+    """Velas recientes de cada símbolo con sus operaciones (zonas de stop y objetivo, y tamaño en $)."""
+    out = {}
+    for s, vs in series.items():
+        vs = vs[-max_velas:]
+        if not vs:
+            continue
+        desde = vs[0].t.isoformat()
+        r = lambda x: float(f"{x:.6g}")  # noqa: E731
+        ops = [{"opened": _iso(o["opened"]), "closed": _iso(o["closed"]), "dir": o["dir"], "entry": r(o["entry"]),
+                "exit": r(o["exit"]), "stop": r(o.get("stop", o["entry"])), "tp": r(o.get("tp", o["entry"])),
+                "usd": round(o.get("usd", 0), 2), "pnl": round(o["pnl"], 2), "R": round(o["R"], 2),
+                "reason": o["reason"], "kind": o.get("kind", "")}
+               for o in m.operaciones if o["symbol"] == s and _iso(o["closed"]) >= desde]
+        pos = [{"opened": _iso(p["opened"]), "dir": p["dir"], "entry": r(p["entry"]), "stop": r(p["stop"]),
+                "tp": r(p["tp"]), "usd": round(p.get("usd", p["entry"] * p["size"]), 2)}
+               for p in m.abiertas.values() if p["symbol"] == s]
+        out[s] = {"candles": [[v.t.isoformat(), r(v.o), r(v.h), r(v.l), r(v.c)] for v in vs],
+                  "trades": ops, "positions": pos}
+    return out
+
+
 def estado_panel(m: "Motor", series: dict, fuente: str, periodo: str | None, sin: "Motor | None" = None,
                  noticias: dict | None = None) -> dict:
     """JSON del panel a partir de un motor (y, si hay, de su versión sin Skeptic)."""
@@ -521,7 +558,8 @@ def estado_panel(m: "Motor", series: dict, fuente: str, periodo: str | None, sin
         "compare_curve": sin.curva if sin else None,
         "daily_pnl": sorted(([d, round(x, 2)] for d, x in m.pnl_diario.items()))[-30:],
         "positions": [{**p, "opened": str(p["opened"])} for p in m.abiertas.values()],
-        "trades": list(reversed(m.operaciones))[:30],
+        "trades": [{k: v for k, v in o.items() if k != "ficha"} for o in reversed(m.operaciones)][:30],
+        "chart": grafico(m, series),
         "stats": {k: (pf(v) if k == "profit_factor" else v) for k, v in st.items()
                   if k in ("trades", "max_dd_pct", "return_pct", "win_rate", "avg_R", "profit_factor")},
         "limits": m.riesgo.limites(),

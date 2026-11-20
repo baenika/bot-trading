@@ -6,6 +6,7 @@ Solo responde al chat de telegram.json (el tuyo). Comandos y botones:
     /cartera     capital ficticio, posiciones abiertas y últimas operaciones (cripto y memes)
     /parametros  la configuración con la que está operando en papel
     /avisos      silencia o reactiva los avisos de decisiones (el bot sigue trabajando igual)
+    /dashboard   enlace al panel en tiempo real (en el wifi de casa)
 
 No hay ningún comando que compre, venda o mueva dinero: todo es papel.
 """
@@ -30,11 +31,13 @@ PARAMETROS = [("timeframe", "Velas"), ("capital_inicial", "Capital ficticio ($)"
               ("pausa_horas", "Horas de pausa"), ("permitir_cortos", "Cortos")]
 
 
-def _botones(avisos: bool) -> dict:
-    return {"inline_keyboard": [
+def _botones(avisos: bool, url_panel: str = "") -> dict:
+    filas = [[{"text": "📊 Panel en tiempo real", "url": url_panel}]] if url_panel.startswith("http") else []
+    return {"inline_keyboard": filas + [
         [{"text": "🔍 Analizar ahora", "callback_data": "/analizar"}, {"text": "💼 Cartera", "callback_data": "/cartera"}],
         [{"text": "⚙️ Parámetros", "callback_data": "/parametros"},
-         {"text": "🔔 Avisos ON" if avisos else "🔕 Avisos OFF", "callback_data": "/avisos"}]]}
+         {"text": "🔔 Avisos ON" if avisos else "🔕 Avisos OFF", "callback_data": "/avisos"}],
+        [{"text": "📊 Enlace del panel", "callback_data": "/dashboard"}]]}
 
 
 def texto_cartera(ruta_cripto: str, ruta_memes: str) -> str:
@@ -68,8 +71,8 @@ def texto_parametros(cfg: dict) -> str:
 
 
 class Mando:
-    def __init__(self, grupo, cfg: dict, ruta_estado: str, ruta_memes: str | None = None):
-        self.grupo, self.cfg, self.ruta_estado = grupo, cfg, ruta_estado
+    def __init__(self, grupo, cfg: dict, ruta_estado: str, ruta_memes: str | None = None, url_panel: str = ""):
+        self.grupo, self.cfg, self.ruta_estado, self.url_panel = grupo, cfg, ruta_estado, url_panel
         self.ruta_memes = ruta_memes or os.path.join(RAIZ, "salida", "papel_memes.json")
         self.token = grupo.comun or grupo.tokens.get("risk", "")
         self.chat = str(grupo.chat_id)
@@ -85,7 +88,7 @@ class Mando:
     def _decir(self, texto: str, botones: bool = False) -> None:
         datos = {"chat_id": self.chat, "text": texto[:4000]}
         if botones:
-            datos["reply_markup"] = _botones(self.grupo.silencio is False)
+            datos["reply_markup"] = _botones(self.grupo.silencio is False, self.url_panel)
         try:
             self._api("sendMessage", datos)
         except Exception as e:  # noqa: BLE001
@@ -117,6 +120,10 @@ class Mando:
             self.grupo.silencio = not self.grupo.silencio
             self._decir("🔕 Avisos de decisiones en silencio. El Consejo sigue trabajando y apuntando todo."
                         if self.grupo.silencio else "🔔 Avisos activados.", botones=True)
+        elif orden == "/dashboard":
+            self._decir(f"📊 Panel en tiempo real: {self.url_panel}\nSe abre con el móvil en el mismo wifi que la "
+                        "torre, y la torre encendida." if self.url_panel else
+                        "El panel no está abierto a la red de casa. En la torre: py dashboard_server.py --red")
         elif orden.startswith("/"):
             self._decir("No conozco ese comando. Prueba /panel.")
         return None

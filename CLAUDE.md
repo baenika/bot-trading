@@ -28,6 +28,10 @@ Bot de trading multi-agente ("el Consejo") de David. Toda la documentación y lo
 - Las mesas y sus símbolos están en `consejo/mesas.py`
 - Panel: `python dashboard_server.py` y abrir http://localhost:8000 (papel en vivo: `/?fuente=papel`)
 - Papel en vivo: `python papel.py --mesa cripto` (dinero ficticio; Telegram opcional con `telegram.json`, que nunca se sube)
+- Telegram: un solo bot (`py configurar_telegram.py`, guarda telegram.json). papel.py atiende /panel, /analizar, /cartera, /parametros, /avisos, /dashboard
+- Panel en el móvil (mismo wifi): `python dashboard_server.py --red`
+- Aprender/autoajuste semanal: `python aprender.py [--telegram]`. Regla de dos tramos (2/3 buscar, 1/3 comprobar), un cambio como mucho, solo parámetros de RANGOS; lo aceptado va a salida/config_auto_<mesa>.json
+- Señales de un canal frente a velas reales: `python senales.py [result.json]` o `--capturas`
 - Memecoins: `python memes.py grabar` (papel + grabación en datos/memes/) y `python memes.py backtest [--grid]`
 - Estrategia de las 9:30 (SPY/QQQ, 5 min): `python orb.py diario` (actualiza velas + informe)
 - Kronos opcional: `kronos_ruta` en la config; solo vota si está calibrado

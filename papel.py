@@ -182,9 +182,15 @@ def main(argv=None) -> int:
     ap.add_argument("--cada", type=int, default=300, help="segundos entre pasadas")
     ap.add_argument("--telegram", default=os.path.join(RAIZ, "telegram.json"))
     ap.add_argument("--prueba-telegram", action="store_true")
+    ap.add_argument("--puerto-panel", type=int, default=8000,
+                    help="puerto del panel abierto con `dashboard_server.py --red` (0 = no dar enlace)")
     a = ap.parse_args(argv)
 
-    cfg = {**backtest.CONFIG_DEFECTO, **mesas.AJUSTES[a.mesa], "modo": "paper", "caminos_ultima": 3000}
+    import aprender
+    auto = aprender.cargar_auto(a.mesa)          # lo que aceptó el autoajuste semanal (si hay)
+    cfg = {**backtest.CONFIG_DEFECTO, **mesas.AJUSTES[a.mesa], **auto, "modo": "paper", "caminos_ultima": 3000}
+    if auto:
+        print(f"Ajustes automáticos aceptados: {auto}")
     seguridad.comprobar_modo(cfg["modo"])
     seguridad.comprobar_config(cfg)
     grupo = Grupo(a.telegram)
@@ -194,7 +200,9 @@ def main(argv=None) -> int:
         return 0
 
     ruta = os.path.join(RAIZ, "salida", f"papel_{a.mesa}.json")
-    mando = Mando(grupo, cfg, ruta)       # /panel, /analizar, /cartera, /parametros, /avisos desde Telegram
+    import dashboard_server
+    url_panel = f"http://{dashboard_server.ip_local()}:{a.puerto_panel}/?fuente=papel" if a.puerto_panel else ""
+    mando = Mando(grupo, cfg, ruta, url_panel=url_panel)       # /panel, /analizar, /cartera, /parametros, /avisos desde Telegram
     if mando.activo and not a.una_vez:
         grupo.enviar("risk", "🏛️ Consejo en marcha (papel). Escribe /panel para ver los botones.")
     while True:

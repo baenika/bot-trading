@@ -29,7 +29,7 @@
   .logo{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--accent2),var(--accent));color:#fff;display:grid;place-items:center;font-weight:800}
   nav.pills{display:flex;gap:2px;background:var(--card);border:1px solid var(--line);border-radius:40px;padding:5px;margin:0 auto}
   nav.pills a{padding:7px 15px;border-radius:30px;color:var(--ink2);text-decoration:none;font-size:13px;white-space:nowrap}
-  nav.pills a.on{background:var(--ink);color:#0a0a0c}
+  nav.pills a.on{background:var(--ink);color:#0a0a0c} nav.pills a{cursor:pointer}
   nav.pills.desk{margin:0;padding:4px} nav.pills.desk a{padding:6px 12px}
   nav.pills.desk a.on{background:linear-gradient(135deg,var(--accent2),var(--accent));color:#fff}
   .kills{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px 22px}
@@ -189,6 +189,13 @@
         <div id="verdict"><div class="empty">Todavía no hay ninguna alerta del Scout.</div></div>
       </div>
 
+      <div class="card c12" id="velasCard" style="display:none">
+        <div class="ct"><div><h3>Velas y operaciones</h3><small>Zona verde hasta el objetivo, roja hasta el stop. El círculo de entrada es mayor cuanto mayor es la operación ($)</small></div>
+          <div class="right"><nav class="pills desk" id="velasSym"></nav><nav class="pills desk" id="velasZoom"><a data-z="168">1 sem</a><a data-z="720" class="on">1 mes</a><a data-z="0">Todo</a></nav></div></div>
+        <div id="velas"></div>
+        <div class="legend" style="margin-top:8px"><span><i style="background:var(--up)"></i>Ganó</span><span><i style="background:var(--down)"></i>Perdió</span><span><i style="background:var(--wait)"></i>Abierta</span></div>
+      </div>
+
       <div class="card c12" id="bots">
         <div class="ct"><div><h3>El consejo</h3><small>Lo último que ha dicho cada bot</small></div><small id="botsOn">—</small></div>
         <div class="bots" id="botGrid"></div>
@@ -317,6 +324,71 @@ function barChart(el, rows){
 }
 
 /* ---------- pintar ---------- */
+let VSYM = null, VZOOM = 720;
+function candleChart(el, c){
+  const W = Math.max(320, el.clientWidth), H = W < 600 ? 300 : 380, P = {l:8, r:62, t:10, b:24};
+  let cs = c.candles || [];
+  if (VZOOM) cs = cs.slice(-VZOOM);
+  if (!cs.length){ el.innerHTML = '<div class="empty">Sin velas.</div>'; return; }
+  // si no caben, se agrupan varias velas en una
+  const maxB = Math.floor((W - P.l - P.r) / 4), g = Math.max(1, Math.ceil(cs.length / maxB)), B = [];
+  for (let i = 0; i < cs.length; i += g){
+    const k = cs.slice(i, i + g);
+    B.push({t: Date.parse(k[0][0]), t2: Date.parse(k[k.length-1][0]), o: k[0][1], h: Math.max(...k.map(x=>x[2])),
+            l: Math.min(...k.map(x=>x[3])), c: k[k.length-1][4]});
+  }
+  const t0 = B[0].t, tEnd = B[B.length-1].t2;
+  const vis = x => Date.parse(x.closed || x.opened) >= t0 && Date.parse(x.opened) <= tEnd + 1;
+  const ops = (c.trades || []).filter(vis), pos = (c.positions || []);
+  let lo = Math.min(...B.map(b=>b.l)), hi = Math.max(...B.map(b=>b.h));
+  [...ops, ...pos].forEach(o => { lo = Math.min(lo, o.stop, o.tp, o.entry); hi = Math.max(hi, o.stop, o.tp, o.entry); });
+  const pad = (hi - lo) * .04; lo -= pad; hi += pad;
+  const bw = (W - P.l - P.r) / B.length;
+  const xi = t => { let a = 0, b = B.length - 1; while (a < b){ const m = (a + b + 1) >> 1; if (B[m].t <= t) a = m; else b = m - 1; } return P.l + bw * (a + .5); };
+  const y = v => P.t + (hi - v) / (hi - lo) * (H - P.t - P.b);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}">`;
+  for (let k = 0; k <= 4; k++){ const v = lo + (hi - lo) * k / 4;
+    svg += `<line x1="${P.l}" x2="${W-P.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${W-P.r+6}" y="${y(v)+4}" fill="var(--tick)" font-size="11">${px(v)}</text>`; }
+  const maxUsd = Math.max(1, ...ops.map(o=>o.usd||0), ...pos.map(o=>o.usd||0));
+  const rad = u => 4 + 9 * Math.sqrt((u || 0) / maxUsd);
+  const zona = (o, x1, x2, abierta) => {
+    const w = Math.max(2, x2 - x1), d = abierta ? ' stroke-dasharray="4 3"' : "";
+    return `<rect x="${x1}" width="${w}" y="${Math.min(y(o.tp), y(o.entry))}" height="${Math.abs(y(o.tp)-y(o.entry))}" fill="var(--up)" opacity=".13"/>` +
+           `<rect x="${x1}" width="${w}" y="${Math.min(y(o.stop), y(o.entry))}" height="${Math.abs(y(o.stop)-y(o.entry))}" fill="var(--down)" opacity=".13"/>` +
+           `<line x1="${x1}" x2="${x1+w}" y1="${y(o.entry)}" y2="${y(o.entry)}" stroke="var(--ink2)" stroke-width="1"${d}/>`;
+  };
+  ops.forEach(o => svg += zona(o, xi(Date.parse(o.opened)), xi(Date.parse(o.closed)), false));
+  pos.forEach(o => svg += zona(o, xi(Date.parse(o.opened)), W - P.r, true));
+  B.forEach((b, i) => { const x = P.l + bw * (i + .5), col = b.c >= b.o ? "var(--up)" : "var(--down)";
+    svg += `<line x1="${x}" x2="${x}" y1="${y(b.h)}" y2="${y(b.l)}" stroke="${col}" stroke-width="1"/>` +
+           `<rect x="${x - Math.max(1, bw*.35)}" width="${Math.max(2, bw*.7)}" y="${Math.min(y(b.o), y(b.c))}" height="${Math.max(1, Math.abs(y(b.o)-y(b.c)))}" fill="${col}"/>`; });
+  const tipT = o => `${o.dir === "long" ? "Compra" : "Venta"} · lote ${money(o.usd)}<br>entrada ${px(o.entry)} · stop ${px(o.stop)} · objetivo ${px(o.tp)}` +
+    (o.closed ? `<br>salida ${px(o.exit)} · ${sgn(o.pnl)} $ (${sgn(o.R)}R) · ${esc(o.reason)}` : "<br>abierta");
+  [...ops.map(o=>[o,false]), ...pos.map(o=>[o,true])].forEach(([o, ab], k) => {
+    const col = ab ? "var(--wait)" : o.pnl > 0 ? "var(--up)" : "var(--down)", x1 = xi(Date.parse(o.opened));
+    if (!ab) svg += `<line x1="${x1}" y1="${y(o.entry)}" x2="${xi(Date.parse(o.closed))}" y2="${y(o.exit)}" stroke="${col}" stroke-width="1.5" stroke-dasharray="3 3"/>` +
+                    `<rect x="${xi(Date.parse(o.closed))-3.5}" y="${y(o.exit)-3.5}" width="7" height="7" fill="${col}"/>`;
+    svg += `<circle class="vop" data-k="${k}" cx="${x1}" cy="${y(o.entry)}" r="${rad(o.usd)}" fill="${col}" fill-opacity=".35" stroke="${col}" stroke-width="2"/>`;
+  });
+  const fd = t => new Date(t).toLocaleDateString("es-ES", {day:"2-digit", month:"short"});
+  [0, .25, .5, .75, 1].forEach(f => { const b = B[Math.min(B.length-1, Math.round(f*(B.length-1)))];
+    svg += `<text x="${P.l + bw*(Math.round(f*(B.length-1))+.5)}" y="${H-6}" fill="var(--tick)" font-size="11" text-anchor="middle">${fd(b.t)}</text>`; });
+  el.innerHTML = svg + "</svg>" + (ops.length || pos.length ? "" : '<div class="empty">Ninguna operación en este tramo.</div>');
+  const todas = [...ops, ...pos];
+  el.querySelectorAll(".vop").forEach(n => { n.addEventListener("mousemove", e => showTip(e, tipT(todas[+n.dataset.k])));
+    n.addEventListener("mouseleave", hideTip); n.addEventListener("click", e => showTip(e, tipT(todas[+n.dataset.k]))); });
+}
+function renderVelas(d){
+  const ch = d.chart || {}, syms = Object.keys(ch);
+  $("velasCard").style.display = syms.length ? "" : "none";
+  if (!syms.length) return;
+  if (!ch[VSYM]) VSYM = syms.find(s => (ch[s].positions||[]).length) || syms[0];
+  $("velasSym").innerHTML = syms.map(s => `<a data-s="${esc(s)}" class="${s===VSYM?"on":""}">${esc(s.replace("USDT",""))}</a>`).join("");
+  $("velasSym").querySelectorAll("a").forEach(a => a.onclick = () => { VSYM = a.dataset.s; renderVelas(DATA); });
+  $("velasZoom").querySelectorAll("a").forEach(a => { a.className = +a.dataset.z === VZOOM ? "on" : "";
+    a.onclick = () => { VZOOM = +a.dataset.z; renderVelas(DATA); }; });
+  candleChart($("velas"), ch[VSYM]);
+}
 function render(d){
   DATA = d; hello();
   const live = d.source === "live";
@@ -361,6 +433,7 @@ function render(d){
   $("curveLegend").innerHTML = leg;
   $("curveSub").textContent = d.compare_curve ? "El backtest se repite sin el Skeptic para comparar" : "Capital ficticio a lo largo del tiempo";
   lineChart($("curve"), series, d.start_equity);
+  renderVelas(d);
 
   const v = d.last_decision;
   if (v){
