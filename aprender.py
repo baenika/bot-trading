@@ -38,6 +38,7 @@ RANGOS = {
     "retroceso_pct": [15, 25, 35],       # repaso con David (20/11): sin probar, que decidan los datos
     "espera_barras": [4, 6, 10],
     "max_barras": [24, 48, 72],
+    "atr_vela_min": [1.6, 2.0, 2.5],
 }
 MIN_OPS_COMPROBAR = 30
 

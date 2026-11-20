@@ -27,7 +27,7 @@ PARAMETROS = [("timeframe", "Velas"), ("capital_inicial", "Capital ficticio ($)"
               ("espera_barras", "Velas esperando el retroceso"), ("max_barras", "Velas máximas por operación"), ("puntos_para_entrar", "Puntos para comprar"),
               ("puntos_para_esperar", "Puntos para esperar retroceso"), ("max_open_positions", "Posiciones a la vez"),
               ("daily_loss_limit_pct", "Pérdida máxima diaria (%)"), ("max_drawdown_pct", "Pérdida máxima total (%)"),
-              ("comision_pct", "Comisión (%)"), ("moving_pct", "MOVING (%)"), ("fomo_atr", "FOMO (ATR)"),
+              ("z_volumen_min", "Volumen anómalo (σ)"), ("atr_vela_min", "Vela grande (ATR)"), ("comision_pct", "Comisión (%)"), ("moving_pct", "MOVING (%)"), ("fomo_atr", "FOMO (ATR)"),
               ("fomo_modo", "Con FOMO"), ("pausa_tras_perdidas", "Pérdidas seguidas para pausar"),
               ("pausa_horas", "Horas de pausa"), ("permitir_cortos", "Cortos")]
 
