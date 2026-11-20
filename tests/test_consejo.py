@@ -566,3 +566,31 @@ def test_telegram_limpia_el_token_pegado():
     assert ct.limpiar(f"  {tok}\r\n") == tok
     assert ct.limpiar("\x16") == ""
     assert ct.limpiar(f"Use this token to access the HTTP API:\n{tok}\nKeep it secure") == tok
+
+
+def test_mando_de_telegram_solo_obedece_a_tu_chat(tmp_path, monkeypatch):
+    from consejo import mando, telegram
+    ruta = tmp_path / "telegram.json"
+    ruta.write_text(json.dumps({"chat_id": "77", "token": "T"}), encoding="utf-8")
+    g = telegram.Grupo(str(ruta), pausa=0)
+    estado = tmp_path / "papel.json"
+    estado.write_text(json.dumps({"capital": 10123.4, "inicio": "2026-11-19T05:37", "operaciones": [],
+                                  "abiertas": {"BTCUSDT": {"entry": 62000, "stop": 61000, "tp": 64000}}}))
+    m = mando.Mando(g, backtest.CONFIG_DEFECTO, str(estado), str(tmp_path / "no.json"))
+    dichos = []
+    monkeypatch.setattr(m, "_api", lambda metodo, datos, timeout=10: dichos.append((metodo, datos)) or {})
+    assert m.atender({"message": {"chat": {"id": 99}, "text": "/analizar"}}) is None and not dichos
+    assert m.atender({"message": {"chat": {"id": 77}, "text": "/analizar"}}) == "analizar"
+    m.atender({"message": {"chat": {"id": 77}, "text": "/cartera"}})
+    assert "10,123.40" in dichos[-1][1]["text"] and "BTCUSDT" in dichos[-1][1]["text"]
+    m.atender({"callback_query": {"id": "c", "data": "/avisos", "message": {"chat": {"id": 77}}}})
+    assert g.silencio and dichos[-2][0] == "answerCallbackQuery"
+    m.atender({"message": {"chat": {"id": 77}, "text": "/parametros"}})
+    assert "Riesgo por operación" in dichos[-1][1]["text"]
+    enviados = []
+    monkeypatch.setattr(g, "_mandar", lambda tok, txt: enviados.append(txt))
+    g.conversacion([("scout", "a"), ("skeptic", "b")])
+    assert not enviados                      # en silencio
+    g.silencio = False
+    g.conversacion([("scout", "a"), ("skeptic", "b")])
+    assert len(enviados) == 1 and "Scout" in enviados[0] and "Skeptic" in enviados[0]

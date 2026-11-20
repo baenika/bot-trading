@@ -26,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 
 from consejo import backtest, datos, mesas, seguridad
 from consejo.agentes import news
+from consejo.mando import Mando
 from consejo.telegram import NOMBRES, Grupo
 
 RAIZ = os.path.dirname(os.path.abspath(__file__))
@@ -193,11 +194,14 @@ def main(argv=None) -> int:
         return 0
 
     ruta = os.path.join(RAIZ, "salida", f"papel_{a.mesa}.json")
+    mando = Mando(grupo, cfg, ruta)       # /panel, /analizar, /cartera, /parametros, /avisos desde Telegram
+    if mando.activo and not a.una_vez:
+        grupo.enviar("risk", "🏛️ Consejo en marcha (papel). Escribe /panel para ver los botones.")
     while True:
         pasada(a.mesa, cfg, grupo, ruta)
         if a.una_vez:
             return 0
-        time.sleep(a.cada)
+        mando.esperar(a.cada)
 
 
 if __name__ == "__main__":
