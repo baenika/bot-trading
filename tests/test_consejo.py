@@ -741,3 +741,26 @@ def test_memes_ballena_cli(tmp_path, monkeypatch, capsys):
     assert "la gorda" in capsys.readouterr().out
     assert memes.main(["ballena", "quitar", dire]) == 0
     assert "ninguna" in capsys.readouterr().out
+
+
+def test_ballenas_frenado_429_no_insiste(tmp_path):
+    from consejo.memes.ballenas import Ballenas, Frenado
+    llamadas = []
+
+    def rpc(metodo, params):
+        llamadas.append(metodo)
+        raise Frenado("429")
+    b = Ballenas(str(tmp_path / "b.json"), rpc=rpc, cada_s=300)
+    b.seguir("W1")
+    assert b.pasada({f"M{i}": f"C{i}" for i in range(20)}, ahora=1000.0) == []
+    assert len(llamadas) == 1 and b.espera == 600          # para al primer 429 y espera el doble
+    assert b.pasada({"M1": "C1"}, ahora=1500.0) == []       # todavía no toca
+    assert len(llamadas) == 1
+
+
+def test_examen_sin_operaciones_y_titulos_rss_limpios():
+    from consejo.backtest import examen
+    import descargar_noticias as dn
+    ex = examen({"trades": 0, "profit_factor": 0.0, "max_dd_pct": 0.0, "return_pct": 0.0}, -2.1)
+    assert all(x["ok"] in (None, False) for x in ex) and ex[3]["ok"] is None
+    assert dn.limpiar_titulo("�​Why higher  rates ") == "Why higher rates"

@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import urllib.error
 import urllib.request
 
 RPC = "https://api.mainnet-beta.solana.com"
@@ -39,14 +40,23 @@ class SoloLectura(RuntimeError):
     pass
 
 
+class Frenado(RuntimeError):
+    """El RPC público dijo «demasiadas peticiones» (429): se deja para la pasada siguiente."""
+
+
 def rpc_publico(metodo: str, params: list, url: str = RPC, timeout: int = 20):
     if metodo not in LECTURA:
         raise SoloLectura(f"Método '{metodo}' no permitido: las ballenas solo leen la blockchain.")
     cuerpo = json.dumps({"jsonrpc": "2.0", "id": 1, "method": metodo, "params": params}).encode()
     req = urllib.request.Request(url, data=cuerpo, headers={"Content-Type": "application/json",
                                                             "User-Agent": "bot-trading/0.1"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        d = json.loads(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            d = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            raise Frenado("el RPC público de Solana pide ir más despacio (429)") from e
+        raise
     if "error" in d:
         raise RuntimeError(f"RPC {metodo}: {d['error'].get('message', d['error'])}")
     return d.get("result")
@@ -58,9 +68,10 @@ def _corta(x: str) -> str:
 
 class Ballenas:
     def __init__(self, ruta: str, rpc=rpc_publico, venta_pct: float = 2.0, compra_pct: float = 2.0,
-                 concentracion_pct: float = 50.0, max_monedas: int = 15, max_wallets: int = 30,
-                 cada_s: int = 300, dias_auto: float = 7.0):
-        self.ruta, self.rpc = ruta, rpc
+                 concentracion_pct: float = 50.0, max_monedas: int = 5, max_wallets: int = 10,
+                 cada_s: int = 300, dias_auto: float = 7.0, pausa_s: float = 0.0):
+        self.ruta, self.rpc_crudo, self.pausa = ruta, rpc, pausa_s
+        self.espera = cada_s           # sube si el RPC frena (429) y vuelve a cada_s cuando responde
         self.venta, self.compra, self.conc = venta_pct, compra_pct, concentracion_pct
         self.max_monedas, self.max_wallets, self.cada, self.dias_auto = max_monedas, max_wallets, cada_s, dias_auto
         self.ultima = 0.0
@@ -69,6 +80,12 @@ class Ballenas:
                 self.d = {**json.loads(json.dumps(VACIO)), **json.load(f)}
         except (OSError, ValueError):
             self.d = json.loads(json.dumps(VACIO))
+
+    def rpc(self, metodo: str, params: list):
+        """Una llamada al RPC con pausa entre llamadas, para no pasarse del límite público."""
+        if self.pausa:
+            time.sleep(self.pausa)
+        return self.rpc_crudo(metodo, params)
 
     def guardar(self) -> None:
         os.makedirs(os.path.dirname(self.ruta) or ".", exist_ok=True)
@@ -153,28 +170,42 @@ class Ballenas:
                forzar: bool = False) -> list[dict]:
         """`monedas` = {mint: símbolo} que vigila la mesa (abiertas primero). Devuelve los eventos."""
         ahora = ahora or time.time()
-        if not forzar and ahora - self.ultima < self.cada:
+        if not forzar and ahora - self.ultima < self.espera:
             return []
         self.ultima = ahora
         excluir = excluir or set()
         ev: list[dict] = []
-        for mint, simbolo in list(monedas.items())[:self.max_monedas]:
-            try:
-                ev += self.revisar_moneda(mint, simbolo, excluir, ahora)
-            except Exception as e:  # noqa: BLE001 - una moneda que falla no para las demás
-                print(f"Ballenas: no pude leer {simbolo}: {e}")
         vivas = set(monedas)
         self.d["monedas"] = {m: x for m, x in self.d["monedas"].items() if m in vivas}
+        # por turnos: primero las que nunca se miraron, luego las que llevan más tiempo sin mirarse
+        turno = sorted(monedas, key=lambda m: self.d["monedas"].get(m, {}).get("t", 0))[:self.max_monedas]
+        frenado = False
+        for mint in turno:
+            try:
+                ev += self.revisar_moneda(mint, monedas[mint], excluir, ahora)
+            except Frenado:
+                frenado = True
+                break
+            except Exception as e:  # noqa: BLE001 - una moneda que falla no para las demás
+                print(f"Ballenas: no pude leer {monedas[mint]}: {e}", flush=True)
         for x in ev:
             if x["tipo"] == "compra":
                 self.seguir(x["wallet"], f"ballena de {x['symbol']}", auto=True, ahora=ahora)
         self.d["wallets"] = {k: w for k, w in self.d["wallets"].items()
                              if w.get("manual") or (w.get("hasta") or 0) > ahora}
-        for wallet in list(self.d["wallets"])[:self.max_wallets]:
+        for wallet in ([] if frenado else list(self.d["wallets"])[:self.max_wallets]):
             try:
                 ev += self.revisar_wallet(wallet)
+            except Frenado:
+                frenado = True
+                break
             except Exception as e:  # noqa: BLE001
-                print(f"Ballenas: no pude leer la wallet {_corta(wallet)}: {e}")
+                print(f"Ballenas: no pude leer la wallet {_corta(wallet)}: {e}", flush=True)
+        if frenado:
+            self.espera = min(self.espera * 2, 3600)
+            print(f"Ballenas: el RPC público frena (429); vuelvo a mirar en {self.espera // 60:.0f} min", flush=True)
+        else:
+            self.espera = self.cada
         self.guardar()
         return ev
 

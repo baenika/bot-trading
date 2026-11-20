@@ -95,6 +95,14 @@ RSS_TERMINOS = {"BTCUSDT": ["bitcoin", "btc"], "ETHUSDT": ["ethereum", "ether", 
                 "SOLUSDT": ["solana", "sol"]}
 
 
+def limpiar_titulo(t: str) -> str:
+    """Quita caracteres invisibles o raros de los RSS (espacios especiales, marcas, �) y espacios dobles."""
+    import unicodedata
+    t = unicodedata.normalize("NFKC", t).replace("\ufffd", "")
+    t = "".join(c for c in t if unicodedata.category(c)[0] != "C" or c == " ")
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def rss_a_filas(xml_txt: str, dominio: str, terminos: list[str] | None = None) -> list[dict]:
     """Titulares de un RSS: {t, titulo, dominio, url}. Si hay términos, solo los que los nombran."""
     import xml.etree.ElementTree as ET
@@ -106,7 +114,7 @@ def rss_a_filas(xml_txt: str, dominio: str, terminos: list[str] | None = None) -
         return []
     filas = []
     for it in raiz.iter("item"):
-        titulo = (it.findtext("title") or "").strip()
+        titulo = limpiar_titulo(it.findtext("title") or "")
         fecha = it.findtext("pubDate") or ""
         if not titulo or not fecha:
             continue

@@ -57,9 +57,11 @@ def bloque_cripto(desde: datetime, revisar: list[str]) -> list[str]:
         lin.append(f"• Comprar y mantener en el mismo tiempo: {bh:+.1f} %")
     exam = panel.get("exam") or []
     if exam:
-        ok = sum(x["ok"] for x in exam)
+        ok = sum(x["ok"] is True for x in exam)
         lin.append(f"• Examen para pensar en dinero real: {ok}/{len(exam)} casillas · "
-                   + ", ".join(f"{'✅' if x['ok'] else '❌'} {x['criterio']}" for x in exam))
+                   + ", ".join(f"{'⏳' if x['ok'] is None else '✅' if x['ok'] else '❌'} {x['criterio']}"
+                               for x in exam)
+                   + (" (⏳ = sin operaciones todavía)" if any(x["ok"] is None for x in exam) else ""))
     cal = panel.get("calibration") or {}
     if cal.get("error_pts") is not None:
         lin.append(f"• Máquina del tiempo: error {cal['error_pts']:.1f} puntos con {cal.get('n', 0)} casos "

@@ -211,7 +211,7 @@ class Motor:
                                  and any(e["s"] == s and e["setup"] == setup for e in hoy))
         self.bots["risk"] = {"time": _fmt(t), "text": ok["texto"]}
         if not ok["ok"]:
-            self.vetos["(Risk) " + re.sub(r"[\d.,]+", "N", ok["texto"].split(":")[0])[:50]] += 1
+            self.vetos["(Risk) " + re.sub(r"[\d.,]+", "N", ok["texto"].split(":")[0].split(" (")[0])[:70]] += 1
             return
         if (dir_ == "long" and not plan.stop < precio < plan.objetivo) or \
            (dir_ == "short" and not plan.objetivo < precio < plan.stop):
@@ -537,13 +537,15 @@ def _comprar_y_mantener(series: dict) -> float:
 
 
 def examen(st: dict, comprar_y_mantener: float) -> list[dict]:
-    """Los criterios de David antes de plantearse siquiera el dinero real (del Consejo v5)."""
+    """Los criterios de David antes de plantearse siquiera el dinero real (del Consejo v5).
+    Sin ninguna operación cerrada no hay nada que juzgar: las casillas salen «sin datos» (ok None)."""
+    sin = not st["trades"]
     return [
         {"criterio": "100 operaciones o más", "ok": st["trades"] >= 100, "valor": st["trades"]},
-        {"criterio": "profit factor mayor de 1,3", "ok": st["profit_factor"] > 1.3,
+        {"criterio": "profit factor mayor de 1,3", "ok": None if sin else st["profit_factor"] > 1.3,
          "valor": round(st["profit_factor"], 2) if math.isfinite(st["profit_factor"]) else 999},
-        {"criterio": "drawdown menor del 20 %", "ok": st["max_dd_pct"] > -20, "valor": round(st["max_dd_pct"], 1)},
-        {"criterio": "gana a comprar y mantener", "ok": st["return_pct"] > comprar_y_mantener,
+        {"criterio": "drawdown menor del 20 %", "ok": None if sin else st["max_dd_pct"] > -20, "valor": round(st["max_dd_pct"], 1)},
+        {"criterio": "gana a comprar y mantener", "ok": None if sin else st["return_pct"] > comprar_y_mantener,
          "valor": f"{st['return_pct']:+.1f}% frente a {comprar_y_mantener:+.1f}%"},
     ]
 

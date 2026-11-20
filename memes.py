@@ -79,11 +79,19 @@ def grabar(params: dict, cada: int, una_vez: bool, grupo: Grupo) -> None:
     from consejo.memes.ballenas import Ballenas
     avisos = Avisador(grupo, "memes")
     avisos.version()
-    ballenas = Ballenas(os.path.join(r["grabacion"], "ballenas.json"))
+    ballenas = Ballenas(os.path.join(r["grabacion"], "ballenas.json"), pausa_s=2.0)
+    hilo = None
     while True:
         try:
             _pasada_memes(eng, ds, rc, extra, r, seguridad_de, grupo)
-            _pasada_ballenas(eng, extra, r, ballenas, grupo)
+            # las ballenas van en un hilo aparte: si el RPC va lento o frena, la grabación sigue cada minuto
+            if una_vez:
+                _pasada_ballenas(eng, extra, r, ballenas, grupo)
+            elif hilo is None or not hilo.is_alive():
+                import threading
+                hilo = threading.Thread(target=_ballenas_seguro, args=(eng, extra, r, ballenas, grupo, avisos),
+                                        daemon=True)
+                hilo.start()
         except Exception as e:  # noqa: BLE001 - un fallo no tumba la grabación: avisa y sigue
             print(f"Error en la pasada de memes: {e!r}")
             avisos.error(e, "la grabación de memes")
@@ -133,15 +141,24 @@ def _pasada_memes(eng, ds, rc, extra, r, seguridad_de, grupo) -> None:
               "kills": eng.kills, "decisions": eng.decisions, "curve": eng.curve[-5000:],
               "last_decision": eng.last_decision, **extra}, r["estado"])
     print(f"{ts[11:16]} · {len(pares)} pares · {len(eng.broker.positions)} abiertas · "
-          f"capital ficticio {eng.broker.equity():,.2f} $")
+          f"capital ficticio {eng.broker.equity():,.2f} $", flush=True)
+
+
+def _ballenas_seguro(eng, extra, r, ballenas, grupo, avisos) -> None:
+    try:
+        _pasada_ballenas(eng, extra, r, ballenas, grupo)
+    except Exception as e:  # noqa: BLE001
+        print(f"Error en las ballenas: {e!r}", flush=True)
+        avisos.error(e, "las ballenas de memes")
 
 
 def _pasada_ballenas(eng, extra, r, ballenas, grupo) -> list[dict]:
     """Ballenas de las monedas abiertas y de las que pasaron el Scout (solo lectura, solo informa)."""
     from consejo.memes.ballenas import texto
-    nombres = extra.get("nombres", {})
-    simbolos = {m: p.get("symbol") or m[:6] for m, p in eng.broker.positions.items()}
-    for m in sorted(extra["watch"], key=lambda m: -extra["watch"][m]):      # las más nuevas primero
+    nombres = dict(extra.get("nombres", {}))
+    simbolos = {m: p.get("symbol") or m[:6] for m, p in list(eng.broker.positions.items())}
+    vigiladas = dict(extra["watch"])
+    for m in sorted(vigiladas, key=lambda m: -vigiladas[m]):      # las más nuevas primero
         simbolos.setdefault(m, (nombres.get(m) or [m[:6]])[0])
     eventos = ballenas.pasada(simbolos, excluir={v[1] for v in nombres.values() if v and v[1]})
     if not eventos:
@@ -152,7 +169,7 @@ def _pasada_ballenas(eng, extra, r, ballenas, grupo) -> list[dict]:
             f.write(json.dumps({"ts": ts, **x}) + "\n")
     abiertas = set(eng.broker.positions)
     importantes = [x for x in eventos if x["tipo"] in ("venta", "compra", "concentracion")
-                   or x.get("mint") in abiertas or x.get("mint") in extra["watch"]]
+                   or x.get("mint") in abiertas or x.get("mint") in vigiladas]
     if importantes:
         grupo.enviar("scout", "\n".join(texto(x, simbolos) + (" (la tenemos en papel)" if x.get("mint") in abiertas
                                                               else "") for x in importantes[:8]))
