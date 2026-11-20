@@ -33,6 +33,10 @@ def cargar(ruta_repo: str, modelo: str = "NeoQuasar/Kronos-small",
     except Exception as e:  # noqa: BLE001
         print(f"Kronos no disponible: {e}")
         return None
+    if dispositivo == "auto":
+        import torch  # type: ignore  # viene con Kronos
+        dispositivo = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Kronos en {dispositivo}")
     tok = KronosTokenizer.from_pretrained(tokenizer)
     mod = Kronos.from_pretrained(modelo)
     _PREDICTOR = KronosPredictor(mod, tok, device=dispositivo, max_context=512)

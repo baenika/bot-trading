@@ -54,6 +54,7 @@ CONFIG_DEFECTO = {
     "calibracion_min_casos": 200,
     "kronos_ruta": "",            # carpeta del repo de Kronos; vacío = sin Kronos
     "kronos_modelo": "NeoQuasar/Kronos-small",
+    "kronos_dispositivo": "auto",  # "auto" = GPU NVIDIA si PyTorch la ve; si no, CPU (unas 30 veces más lento)
     "kronos_caminos": 10,
     "kronos_max": 400,            # en backtest, a cuántas alertas como mucho se le pregunta (es lento)
 }
@@ -181,7 +182,8 @@ class Motor:
         self.n_kronos = 0
         if self.cfg.get("kronos_ruta"):
             from . import kronos_opinion
-            self.kronos = kronos_opinion.cargar(self.cfg["kronos_ruta"], self.cfg["kronos_modelo"])
+            self.kronos = kronos_opinion.cargar(self.cfg["kronos_ruta"], self.cfg["kronos_modelo"],
+                                                dispositivo=self.cfg.get("kronos_dispositivo", "auto"))
         self.duracion = _duracion(self.cfg["timeframe"])
         self.ultimo_i: dict[str, int] = {}
 
