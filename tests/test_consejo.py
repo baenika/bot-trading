@@ -624,3 +624,63 @@ def test_autoajuste_solo_acepta_lo_permitido_y_mide_tramos(tmp_path, monkeypatch
     a, b = aprender.evaluar(serie, cfg, {}, None, corte), aprender.evaluar(serie, cfg, {}, corte, None)
     assert a["n"] + b["n"] >= 1
     assert "pocas" in "\n".join(aprender.lecciones([{"R": 1, "ficha": {"score": 2.2, "moving": True}}]))
+
+
+def test_rss_de_cripto_filtra_por_moneda():
+    import descargar_noticias as dn
+    xml = ('<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "b">]><rss><channel>'
+           '<item><title>Bitcoin hits record high</title><pubDate>Thu, 19 Nov 2026 10:00:00 +0000</pubDate>'
+           '<link>https://x/1</link></item>'
+           '<item><title>Solana outage hits DeFi</title><pubDate>Thu, 19 Nov 2026 11:00:00 GMT</pubDate></item>'
+           '<item><title>Stablecoin bill passes</title><pubDate>Thu, 19 Nov 2026 12:00:00 GMT</pubDate></item>'
+           '</channel></rss>')
+    btc = dn.rss_a_filas(xml, "coindesk.com", dn.RSS_TERMINOS["BTCUSDT"])
+    assert [x["titulo"] for x in btc] == ["Bitcoin hits record high"] and btc[0]["t"].startswith("2026-11-19T10:00")
+    assert len(dn.rss_a_filas(xml, "c", dn.RSS_TERMINOS["SOLUSDT"])) == 1
+    assert dn.rss_a_filas("no es xml", "c") == []
+
+
+def test_risk_protecciones_de_day_trader_skill():
+    from consejo.agentes.charts import Plan
+    from consejo.agentes.risk import GestorRiesgo
+    r = GestorRiesgo(backtest.CONFIG_DEFECTO)
+    plan = Plan("long", 100.0, 99.9, 100.2, 99.97, 2.0, 2.0, None)        # stop muy cerca
+    ok = r.aprobar(10000, 10000, 0, plan, False)
+    assert ok["ok"] and ok["tope_usd"] <= 3300.01                          # posición máx. 33 %
+    assert not r.aprobar(10000, 10000, 0, plan, False, entradas_hoy=3)["ok"]
+    assert not r.aprobar(10000, 10000, 0, plan, False, riesgo_hoy=290)["ok"]       # stops de hoy ya suman ~3 %
+    assert r.aprobar(10000, 10000, 0, plan, False, riesgo_hoy=200)["arriesgo"] <= 100
+    assert not r.aprobar(10000, 10000, 0, plan, False, ya_disparada=True)["ok"]
+    assert not r.aprobar(10000, 10000, 2, plan, False, exposicion=9000)["ok"]     # sin el 10 % de efectivo
+
+
+def test_avisos_no_repiten_y_el_informe_semanal_los_cuenta(tmp_path, monkeypatch):
+    from consejo import avisos
+    import informe_semanal
+    enviados = []
+
+    class G:
+        def enviar(self, bot, texto):
+            enviados.append(texto)
+    ruta = str(tmp_path / "avisos.json")
+    a = avisos.Avisador(G(), "papel cripto", ruta)
+    ahora = datetime(2026, 11, 20, 12, tzinfo=timezone.utc)
+    assert a.avisar("datos", "BTCUSDT", "No llegan velas", ahora)
+    assert not a.avisar("datos", "BTCUSDT", "No llegan velas", ahora + timedelta(hours=1))
+    assert a.avisar("datos", "BTCUSDT", "No llegan velas", ahora + timedelta(hours=7))
+    a.error(ValueError("x"), "la pasada")
+    assert len(enviados) == 3 and "📡" in enviados[0]
+    monkeypatch.setattr(informe_semanal, "SALIDA", str(tmp_path))
+    monkeypatch.setattr(avisos, "RUTA", ruta)
+    (tmp_path / "papel_cripto.json").write_text(json.dumps({
+        "capital": 10100, "inicio": "2026-11-19T05:37", "abiertas": {},
+        "operaciones": [{"closed": "2026-11-19 10:00:00+00:00", "pnl": 100, "R": 1}]}), encoding="utf-8")
+    txt = informe_semanal.informe(datetime(2026, 11, 22, 21, tzinfo=timezone.utc))
+    assert "Avisos de la semana: 3" in txt and "1 operaciones cerradas" in txt and "Memes: sin datos" in txt and "Qué toca revisar" in txt
+
+
+def test_alerta_lleva_historial_de_la_misma_senal():
+    series = {"BTCUSDT": datos.sinteticas("BTCUSDT", 3000, 30000, semilla=1)}
+    m = backtest.Motor(series, {**backtest.CONFIG_DEFECTO, "caminos_backtest": 100}).correr()
+    assert "📜" in m.bots["scout"]["text"]
+    assert any(o["ficha"]["historial"]["n"] > 0 for o in m.operaciones)

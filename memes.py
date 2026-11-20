@@ -72,48 +72,59 @@ def grabar(params: dict, cada: int, una_vez: bool, grupo: Grupo) -> None:
         extra["safety"][m] = s
         return s
 
+    from consejo.avisos import Avisador
+    avisos = Avisador(grupo, "memes")
+    avisos.version()
     while True:
-        ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        nuevos = ds.latest_mints(60)
-        limite = time.time() - 72 * 3600          # vigila 72 h todo lo que pasó el Scout, para grabar su final
-        extra["watch"] = {m: t for m, t in extra["watch"].items() if t > limite}
-        mints = list(dict.fromkeys(nuevos + list(eng.broker.positions) + list(extra["watch"])))[:600]
-        pares = ds.pairs_for(mints)
-        for c in pares:
-            if eng.desk.scout(c):
-                extra["watch"].setdefault(c["mint"], time.time())
-
-        eventos, debates = eng.step(ts, pares, seguridad_de)
-
-        vistos = {c["mint"] for c in pares}
-        with open(os.path.join(r["grabacion"], ts[:10] + ".jsonl"), "a", encoding="utf-8") as f:
-            for c in pares:
-                f.write(json.dumps({"ts": ts, "c": c, "s": rc.cache.get(c["mint"])}) + "\n")
-            for m in set(mints) - vistos:
-                f.write(json.dumps({"ts": ts, "gone": m}) + "\n")
-
-        for rv, tam in debates:   # al grupo solo las compras y las que se quedaron cerca, una vez por moneda
-            cerca = rv.score >= eng.p["min_score"] - 10 and rv.c["mint"] not in extra["debated"]
-            if rv.decision != "COMPRAR" and not cerca:
-                continue
-            extra["debated"] = (extra["debated"] + [rv.c["mint"]])[-2000:]
-            grupo.conversacion(eng.desk.messages(rv, tam))
-        for tipo, x in eventos:
-            if tipo == "close":
-                grupo.enviar("risk", f"🪙 {'🟢' if x['pnl'] > 0 else '🔴'} Cerrado {x['symbol']} por {x['reason']}: "
-                                     f"{x['pnl']:+.2f} $ ({x['pnl_pct']:+.0f}%) · capital ficticio "
-                                     f"{eng.broker.equity():,.2f} $")
-
-        _guardar(eng.snapshot("live", "Solana · memecoins"), r["panel_papel"])
-        _guardar({"broker": {k: getattr(eng.broker, k) for k in ("cash", "start", "peak", "day_start", "day",
-                                                                   "positions", "trades", "last_px")},
-                  "kills": eng.kills, "decisions": eng.decisions, "curve": eng.curve[-5000:],
-                  "last_decision": eng.last_decision, **extra}, r["estado"])
-        print(f"{ts[11:16]} · {len(pares)} pares · {len(eng.broker.positions)} abiertas · "
-              f"capital ficticio {eng.broker.equity():,.2f} $")
+        try:
+            _pasada_memes(eng, ds, rc, extra, r, seguridad_de, grupo)
+        except Exception as e:  # noqa: BLE001 - un fallo no tumba la grabación: avisa y sigue
+            print(f"Error en la pasada de memes: {e!r}")
+            avisos.error(e, "la grabación de memes")
         if una_vez:
             return
         time.sleep(cada)
+
+
+def _pasada_memes(eng, ds, rc, extra, r, seguridad_de, grupo) -> None:
+    ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    nuevos = ds.latest_mints(60)
+    limite = time.time() - 72 * 3600          # vigila 72 h todo lo que pasó el Scout, para grabar su final
+    extra["watch"] = {m: t for m, t in extra["watch"].items() if t > limite}
+    mints = list(dict.fromkeys(nuevos + list(eng.broker.positions) + list(extra["watch"])))[:600]
+    pares = ds.pairs_for(mints)
+    for c in pares:
+        if eng.desk.scout(c):
+            extra["watch"].setdefault(c["mint"], time.time())
+
+    eventos, debates = eng.step(ts, pares, seguridad_de)
+
+    vistos = {c["mint"] for c in pares}
+    with open(os.path.join(r["grabacion"], ts[:10] + ".jsonl"), "a", encoding="utf-8") as f:
+        for c in pares:
+            f.write(json.dumps({"ts": ts, "c": c, "s": rc.cache.get(c["mint"])}) + "\n")
+        for m in set(mints) - vistos:
+            f.write(json.dumps({"ts": ts, "gone": m}) + "\n")
+
+    for rv, tam in debates:   # al grupo solo las compras y las que se quedaron cerca, una vez por moneda
+        cerca = rv.score >= eng.p["min_score"] - 10 and rv.c["mint"] not in extra["debated"]
+        if rv.decision != "COMPRAR" and not cerca:
+            continue
+        extra["debated"] = (extra["debated"] + [rv.c["mint"]])[-2000:]
+        grupo.conversacion(eng.desk.messages(rv, tam))
+    for tipo, x in eventos:
+        if tipo == "close":
+            grupo.enviar("risk", f"🪙 {'🟢' if x['pnl'] > 0 else '🔴'} Cerrado {x['symbol']} por {x['reason']}: "
+                                 f"{x['pnl']:+.2f} $ ({x['pnl_pct']:+.0f}%) · capital ficticio "
+                                 f"{eng.broker.equity():,.2f} $")
+
+    _guardar(eng.snapshot("live", "Solana · memecoins"), r["panel_papel"])
+    _guardar({"broker": {k: getattr(eng.broker, k) for k in ("cash", "start", "peak", "day_start", "day",
+                                                               "positions", "trades", "last_px")},
+              "kills": eng.kills, "decisions": eng.decisions, "curve": eng.curve[-5000:],
+              "last_decision": eng.last_decision, **extra}, r["estado"])
+    print(f"{ts[11:16]} · {len(pares)} pares · {len(eng.broker.positions)} abiertas · "
+          f"capital ficticio {eng.broker.equity():,.2f} $")
 
 
 # --- backtest sobre lo grabado ----------------------------------------------------------

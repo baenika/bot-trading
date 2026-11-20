@@ -31,6 +31,9 @@ Bot de trading multi-agente ("el Consejo") de David. Toda la documentación y lo
 - Telegram: un solo bot (`py configurar_telegram.py`, guarda telegram.json). papel.py atiende /panel, /analizar, /cartera, /parametros, /avisos, /dashboard
 - Panel en el móvil (mismo wifi): `python dashboard_server.py --red`
 - Aprender/autoajuste semanal: `python aprender.py [--telegram]`. Regla de dos tramos (mitad antigua buscar, mitad reciente comprobar), un cambio como mucho, solo parámetros de RANGOS; lo aceptado va a salida/config_auto_<mesa>.json
+- Avisos al móvil: `consejo/avisos.py` (errores, datos que no llegan, paradas, versión nueva, autoajuste); máximo uno igual cada 6 h
+- Informe semanal: `python informe_semanal.py [--telegram]` (domingos, después del autoajuste)
+- Protecciones de Risk (de day-trader-skill): riesgo del día contando los stops de todas las entradas de hoy ≤ 3 %, 3 entradas/día, posición ≤ 33 %, 10 % en efectivo, un disparo por señal y moneda al día
 - Señales de un canal frente a velas reales: `python senales.py [result.json]` o `--capturas`
 - Memecoins: `python memes.py grabar` (papel + grabación en datos/memes/) y `python memes.py backtest [--grid]`
 - Estrategia de las 9:30 (SPY/QQQ, 5 min): `python orb.py diario` (actualiza velas + informe)

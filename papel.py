@@ -60,7 +60,8 @@ def solo_cerradas(vs: list[datos.Vela], duracion: timedelta, ahora: datetime) ->
 
 
 class NoticiasEnVivo(dict):
-    """Baja los titulares de las últimas 24 h solo cuando News los pide (Hacker News; GDELT si responde)."""
+    """Baja los titulares de las últimas 24 h solo cuando News los pide (CoinDesk y Cointelegraph para cripto,
+    Hacker News; GDELT si no hay nada)."""
 
     def __init__(self, ahora: datetime):
         super().__init__()
@@ -82,9 +83,39 @@ class NoticiasEnVivo(dict):
             return None
         return filas
 
+    def _rss(self, s: str) -> list[dict] | None:
+        """CoinDesk y Cointelegraph: mejores fuentes de cripto que Hacker News. Se guardan en
+        datos/noticias/rss/ para que, con el tiempo, el backtest también pueda usarlas."""
+        import descargar_noticias as dn
+        if s not in dn.RSS_TERMINOS:
+            return None
+        filas, desde = [], self.ahora - timedelta(days=1)
+        for dominio, url in dn.RSS_CRIPTO.items():
+            try:
+                filas += dn.rss_a_filas(_get(url).decode("utf-8", "replace"), dominio, dn.RSS_TERMINOS[s])
+            except Exception as e:  # noqa: BLE001
+                print(f"{s}: sin RSS de {dominio} ({e})")
+        if not filas:
+            return None
+        ruta = os.path.join(RAIZ, "datos", "noticias", "rss", f"{s}.jsonl")
+        try:
+            os.makedirs(os.path.dirname(ruta), exist_ok=True)
+            vistos = set()
+            if os.path.exists(ruta):
+                with open(ruta, encoding="utf-8") as f:
+                    vistos = {json.loads(x)["titulo"] for x in f if x.strip()}
+            with open(ruta, "a", encoding="utf-8") as f:
+                for x in filas:
+                    if x["titulo"] not in vistos:
+                        f.write(json.dumps(x, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+        return [x for x in filas if desde <= datetime.fromisoformat(x["t"]) < self.ahora]
+
     def get(self, s, defecto=None):
         if s not in self:
-            filas = self._hn(s)
+            rss, hn = self._rss(s), self._hn(s)
+            filas = None if rss is None and hn is None else (rss or []) + (hn or [])
             if filas is None and s in mesas.NOTICIAS:
                 import descargar_noticias as dn
                 js = dn._pedir({"query": dn._consulta(s), "mode": "artlist", "format": "json",
@@ -105,7 +136,7 @@ def mensajes_de_decision(m: backtest.Motor) -> list[tuple[str, str]]:
     return out
 
 
-def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str) -> None:
+def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str, avisos=None) -> None:
     ahora = datetime.now(timezone.utc)
     dur = backtest._duracion(cfg["timeframe"])
     lista = mesas.CRIPTO if mesa == "cripto" else mesas.MERCADOS
@@ -118,9 +149,15 @@ def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str) -> None:
                 series[s] = vs
         except Exception as e:  # noqa: BLE001 - un símbolo caído no para el resto
             print(f"{s}: sin datos ({e})")
+            if avisos:
+                avisos.avisar("datos", s, f"No llegan las velas de {s} ({type(e).__name__}). Lo reintento cada pasada.")
     if not series:
         print("Sin datos de ningún símbolo; lo intento en la próxima pasada.")
         return
+    for s, vs in series.items():
+        if avisos and ahora - vs[-1].t > dur * 3 + timedelta(hours=1) and mesa == "cripto":
+            avisos.avisar("datos", f"{s}:viejas", f"Las últimas velas de {s} son de {vs[-1].t:%d/%m %H:%M} UTC: "
+                                                  "los datos llegan con retraso.")
 
     m = backtest.Motor(series, cfg, noticias=NoticiasEnVivo(ahora))
     estado = {}
@@ -158,6 +195,10 @@ def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str) -> None:
         else:
             m.curva.append(punto)
 
+    if avisos and m.riesgo.parado and not estado.get("parado"):
+        avisos.avisar("parada", "drawdown", f"El bot se ha PARADO: el capital ficticio cayó más de un "
+                                            f"{m.riesgo.drawdown_max_pct:.0f}% desde su máximo. No abrirá nada "
+                                            "hasta que lo revisemos juntos.")
     os.makedirs(os.path.dirname(ruta_estado), exist_ok=True)
     with open(ruta_estado, "w", encoding="utf-8") as f:
         json.dump({**m.exportar(), "inicio": inicio}, f, ensure_ascii=False, default=str)
@@ -203,10 +244,19 @@ def main(argv=None) -> int:
     import dashboard_server
     url_panel = f"http://{dashboard_server.ip_local()}:{a.puerto_panel}/?fuente=papel" if a.puerto_panel else ""
     mando = Mando(grupo, cfg, ruta, url_panel=url_panel)       # /panel, /analizar, /cartera, /parametros, /avisos desde Telegram
+    from consejo.avisos import Avisador
+    avisos = Avisador(grupo, f"papel {a.mesa}")
     if mando.activo and not a.una_vez:
         grupo.enviar("risk", "🏛️ Consejo en marcha (papel). Escribe /panel para ver los botones.")
+        avisos.version()
+        if auto:
+            avisos.avisar("cambio", json.dumps(auto, sort_keys=True), f"Uso los ajustes aceptados por el autoajuste: {auto}")
     while True:
-        pasada(a.mesa, cfg, grupo, ruta)
+        try:
+            pasada(a.mesa, cfg, grupo, ruta, avisos)
+        except Exception as e:  # noqa: BLE001 - un fallo no tumba el bot: avisa y lo reintenta
+            print(f"Error en la pasada: {e!r}")
+            avisos.error(e, "la pasada del Consejo")
         if a.una_vez:
             return 0
         mando.esperar(a.cada)

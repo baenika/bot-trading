@@ -50,6 +50,13 @@ CONFIG_DEFECTO = {
     "daily_loss_limit_pct": 3.0,
     "max_drawdown_pct": 15.0,
     "max_open_positions": 3,
+    "max_entradas_dia": 3,        # day-trader-skill: como mucho 3 entradas al día
+    "max_posicion_pct": 33.0,     # ninguna posición por encima de un tercio de la cuenta
+    "efectivo_min_pct": 10.0,     # y siempre un 10 % en efectivo
+    "un_disparo_dia": True,       # una sola entrada por señal y moneda al día
+    "scout_sobreventa": False,    # alarmas nuevas: solo se activan si el autoajuste demuestra que ganan
+    "scout_bandera": False,
+    "horas_prohibidas_utc": [],
     "moving_pct": 3.0,
     "ventana_noticias_h": 24,
     "calibracion_max_error": 7.0,
@@ -188,21 +195,31 @@ class Motor:
                                                 dispositivo=self.cfg.get("kronos_dispositivo", "auto"))
         self.duracion = _duracion(self.cfg["timeframe"])
         self.ultimo_i: dict[str, int] = {}
+        self.entradas_hoy: list[dict] = []    # entradas del día (para el riesgo diario y el disparo único)
 
     # --- ejecución simulada -------------------------------------------------
     def _coste(self, precio: float, tam: float) -> float:
         return precio * tam * self.cfg["comision_pct"] / 100
 
     def _abrir(self, s, i, dir_, precio, plan, tipo, t, ficha=None):
-        ok = self.riesgo.aprobar(self.capital, self.inicio_dia, len(self.abiertas), plan, s in self.abiertas)
+        setup = (ficha or {}).get("setup", "movimiento")
+        hoy = [e for e in self.entradas_hoy if e["dia"] == t.date().isoformat()]
+        ok = self.riesgo.aprobar(self.capital, self.inicio_dia, len(self.abiertas), plan, s in self.abiertas,
+                                 riesgo_hoy=sum(e["riesgo"] for e in hoy), entradas_hoy=len(hoy),
+                                 exposicion=sum(p.get("usd", p["entry"] * p["size"]) for p in self.abiertas.values()),
+                                 ya_disparada=self.cfg.get("un_disparo_dia", True)
+                                 and any(e["s"] == s and e["setup"] == setup for e in hoy))
         self.bots["risk"] = {"time": _fmt(t), "text": ok["texto"]}
         if not ok["ok"]:
+            self.vetos["(Risk) " + re.sub(r"[\d.,]+", "N", ok["texto"].split(":")[0])[:50]] += 1
             return
         if (dir_ == "long" and not plan.stop < precio < plan.objetivo) or \
            (dir_ == "short" and not plan.objetivo < precio < plan.stop):
             return  # el precio ya se salió del plan
-        tam = self.capital * self.riesgo.riesgo_pct / 100 / abs(precio - plan.stop)
-        tam = min(tam, self.capital / precio)
+        tam = ok["arriesgo"] / abs(precio - plan.stop)
+        tam = min(tam, ok["tope_usd"] / precio)
+        self.entradas_hoy = hoy + [{"dia": t.date().isoformat(), "s": s, "setup": setup,
+                                    "riesgo": abs(precio - plan.stop) * tam}]
         self.capital -= self._coste(precio, tam)
         self.abiertas[s] = {"symbol": s, "dir": dir_, "kind": tipo, "entry": precio, "stop": plan.stop,
                             "tp": plan.objetivo, "size": tam, "i": i, "opened": t,
@@ -285,7 +302,9 @@ class Motor:
         sim = maquina_tiempo.simular(ctx.rend[max(1, i - 1000):i + 1], plan.entrada, plan.stop, plan.objetivo,
                                      plan.dir, horizonte=cfg["max_barras"], caminos=caminos, semilla=i)
         estudio = sentimental.estudio_historico(self.casos[s], alerta, i, h)
-        self.casos[s].append({"i": i, "dir": alerta.dir, "fuerza": alerta.fuerza, "ret_h": ret_h})
+        hist = self.historial_senal(s, alerta, i)
+        self.casos[s].append({"i": i, "dir": alerta.dir, "fuerza": alerta.fuerza, "ret_h": ret_h,
+                              "setup": alerta.setup, "plan": plan})
         cierre = alerta.t + self.duracion           # la decisión se toma al cierre de la vela
         noticias = news.opinar(alerta, ctx, self.noticias.get(s), cierre, cfg)
         senti = sentimental.opinar(ctx, alerta, self.racha, estudio, sim, cfg, noticias)
@@ -334,11 +353,12 @@ class Motor:
             self.puntos[round(dec["score"])] += 1
 
         # ficha: lo que vio el Consejo al decidir (se guarda con la operación para aprender de ella)
-        ficha = {"decision": dec["decision"], "score": dec["score"], "pros": dec["pros"][:6], "cons": dec["cons"][:6],
+        ficha = {"setup": alerta.setup, "decision": dec["decision"], "score": dec["score"], "pros": dec["pros"][:6], "cons": dec["cons"][:6],
                  "fuerza": alerta.fuerza, "rr": round(plan.rr, 2), "temperatura": senti.get("temperatura"),
                  "fomo": bool(senti.get("fomo")), "moving": bool(noticias.get("moving")),
                  "etiquetas": noticias.get("etiquetas", []), "p_tp_sim": sim.get("p_tp"),
-                 "sim_calibrada": calibrada, "p_tp_kronos": (kron or {}).get("p_tp"), "hora_utc": alerta.t.hour}
+                 "sim_calibrada": calibrada, "p_tp_kronos": (kron or {}).get("p_tp"), "hora_utc": alerta.t.hour,
+                 "historial": hist}
         if dec["decision"] in ("COMPRAR", "VENDER"):
             self.pendientes[s] = {"tipo": "mercado", "plan": plan, "i": i, "t_i": ctx.velas[i].t.isoformat(),
                                   "ficha": ficha}
@@ -351,7 +371,10 @@ class Motor:
                 self.rechazadas.append(r)
 
         self.bots.update({
-            "scout": {"time": t, "text": alerta.texto(cfg["timeframe"])},
+            "scout": {"time": t, "text": alerta.texto(cfg["timeframe"]) + (
+                f"\n📜 Esta señal salió {hist['n']} veces antes en {s}: {hist['objetivo']} al objetivo, "
+                f"{hist['stop']} al stop y {hist['nada']} sin llegar a ninguno." if hist["n"] else
+                "\n📜 Primera vez que sale esta señal aquí: sin historial.")},
             "news": {"time": t, "text": noticias["texto"]},
             "chart": {"time": t, "text": plan.texto()},
             "sentimental": {"time": t, "text": senti["texto"]},
@@ -383,6 +406,27 @@ class Motor:
                     v = self.ctx[sim].velas[self.ultimo_i.get(sim, i)]
                     self._cerrar(sim, v.c, "corte de drawdown", v.t)
 
+    def historial_senal(self, s: str, alerta, i: int) -> dict:
+        """Las veces que esta misma señal saltó antes en este símbolo y ya se sabe cómo acabó
+        (solo casos cerrados antes de la vela i: nada del futuro)."""
+        ctx, mb = self.ctx[s], self.cfg["max_barras"]
+        n = obj = stop = 0
+        for c in self.casos[s]:
+            if c.get("setup", "movimiento") != alerta.setup or c["dir"] != alerta.dir or c["i"] + mb >= i \
+                    or c.get("plan") is None:
+                continue
+            if "res" not in c:
+                c["res"] = toca_objetivo(ctx, c["i"], c["plan"], mb)
+                if c["res"] is False:   # ¿stop o ninguno de los dos?
+                    vs = ctx.velas[c["i"] + 1:c["i"] + 1 + mb]
+                    p = c["plan"]
+                    tocó = any(v.l <= p.stop for v in vs) if p.dir == "long" else any(v.h >= p.stop for v in vs)
+                    c["res"] = False if tocó else "nada"
+            n += 1
+            obj += c["res"] is True
+            stop += c["res"] is False
+        return {"n": n, "objetivo": obj, "stop": stop, "nada": n - obj - stop}
+
     def precalentar(self, s: str, hasta: int) -> None:
         """Rellena el estudio histórico de Sentimental con las alertas pasadas, sin operar."""
         ctx, h = self.ctx[s], 12
@@ -391,7 +435,8 @@ class Motor:
             a = scout.escanear(ctx, i, self.cfg)
             if a:
                 ret_h = (ctx.velas[i + h].c / ctx.velas[i].c - 1) * 100 if i + h < len(ctx.velas) else None
-                self.casos[s].append({"i": i, "dir": a.dir, "fuerza": a.fuerza, "ret_h": ret_h})
+                self.casos[s].append({"i": i, "dir": a.dir, "fuerza": a.fuerza, "ret_h": ret_h,
+                                      "setup": a.setup, "plan": charts.planificar(ctx, a, self.cfg)})
 
     def correr(self) -> "Motor":
         eventos = sorted((v.t, s, i) for s, c in self.ctx.items() for i, v in enumerate(c.velas))
@@ -416,6 +461,7 @@ class Motor:
             "decisiones": dict(self.decisiones), "rechazadas": self.rechazadas, "racha": self.racha,
             "t_pausa": self.t_pausa.isoformat() if self.t_pausa else None,
             "parado": self.riesgo.parado, "bots": self.bots, "ultima": self.ultima,
+            "entradas_hoy": self.entradas_hoy,
             "visto": {s: self.ctx[s].velas[i].t.isoformat() for s, i in self.ultimo_i.items() if i >= 0},
         }
 
@@ -449,6 +495,7 @@ class Motor:
         self.t_pausa = datetime.fromisoformat(d["t_pausa"]) if d.get("t_pausa") else None
         self.riesgo.parado = d.get("parado", False)
         self.bots = d.get("bots", {})
+        self.entradas_hoy = d.get("entradas_hoy", [])
         self.ultima = d.get("ultima")
         for s, t in d.get("visto", {}).items():
             if s in self.ctx:

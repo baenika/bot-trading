@@ -88,6 +88,39 @@ def titulares_a_filas(js: dict) -> list[dict]:
     return filas
 
 
+# --- RSS de medios de cripto (para el papel en vivo: solo dan los últimos días) ---------------
+RSS_CRIPTO = {"coindesk.com": "https://www.coindesk.com/arc/outboundfeeds/rss/",
+              "cointelegraph.com": "https://cointelegraph.com/rss"}
+RSS_TERMINOS = {"BTCUSDT": ["bitcoin", "btc"], "ETHUSDT": ["ethereum", "ether", "eth"],
+                "SOLUSDT": ["solana", "sol"]}
+
+
+def rss_a_filas(xml_txt: str, dominio: str, terminos: list[str] | None = None) -> list[dict]:
+    """Titulares de un RSS: {t, titulo, dominio, url}. Si hay términos, solo los que los nombran."""
+    import xml.etree.ElementTree as ET
+    from email.utils import parsedate_to_datetime
+    xml_txt = re.sub(r"<!DOCTYPE[^\[>]*(\[.*?\])?\s*>", "", xml_txt or "", flags=re.I | re.S)   # sin entidades raras
+    try:
+        raiz = ET.fromstring(xml_txt)
+    except ET.ParseError:
+        return []
+    filas = []
+    for it in raiz.iter("item"):
+        titulo = (it.findtext("title") or "").strip()
+        fecha = it.findtext("pubDate") or ""
+        if not titulo or not fecha:
+            continue
+        try:
+            t = parsedate_to_datetime(fecha).astimezone(timezone.utc)
+        except (TypeError, ValueError):
+            continue
+        if terminos and not any(re.search(rf"\b{re.escape(x)}\b", titulo, re.I) for x in terminos):
+            continue
+        filas.append({"t": t.isoformat(), "titulo": titulo, "dominio": dominio,
+                      "url": (it.findtext("link") or "").strip(), "fuente": "rss"})
+    return filas
+
+
 def serie_diaria(js: dict) -> dict[str, float]:
     """Convierte un 'timeline' de GDELT en {AAAA-MM-DD: valor} (media si viene por horas)."""
     tl = (js or {}).get("timeline") or []

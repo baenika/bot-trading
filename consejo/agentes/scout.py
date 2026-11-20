@@ -14,6 +14,7 @@ class Alerta:
     precio: float
     fuerza: float     # 0-100
     motivos: list[str] = field(default_factory=list)
+    setup: str = "movimiento"   # movimiento | sobreventa | bandera
 
     def texto(self, timeframe: str) -> str:
         flecha = "🟢 al alza" if self.dir == "long" else "🔴 a la baja"
@@ -28,6 +29,8 @@ def escanear(ctx, i: int, cfg: dict) -> Alerta | None:
     if i < 120:
         return None
     v = ctx.velas[i]
+    if v.t.hour in (cfg.get("horas_prohibidas_utc") or []):
+        return None
     a = ctx.atr[i - 1] or 1e-9
     cuerpo = abs(v.c - v.o)
     tam_atr = cuerpo / a
@@ -54,6 +57,28 @@ def escanear(ctx, i: int, cfg: dict) -> Alerta | None:
 
     # Hace falta volumen raro o vela enorme, y al menos dos señales en total.
     fuerte = z >= cfg.get("z_volumen_min", 2.5) or tam_atr >= cfg.get("atr_vela_min", 2.0)
-    if not fuerte or len(motivos) < 2:
+    if fuerte and len(motivos) >= 2:
+        return Alerta(ctx.simbolo, i, v.t, dir_, v.c, min(100.0, puntos), motivos)
+    if cfg.get("scout_sobreventa") and ctx.rsi[i - 1] < 30 and v.c > v.o and v.c > ctx.velas[i - 1].c:
+        return Alerta(ctx.simbolo, i, v.t, "long", v.c, 45.0,
+                      [f"RSI {ctx.rsi[i - 1]:.0f} (sobreventa) y la vela rebota al alza"], "sobreventa")
+    if cfg.get("scout_bandera"):
+        b = bandera(ctx, i)
+        if b:
+            return Alerta(ctx.simbolo, i, v.t, "long", v.c, 50.0, [b], "bandera")
+    return None
+
+
+def bandera(ctx, i: int) -> str | None:
+    """Bandera alcista (como el scanner de day-trader-skill, pero medida en ATR porque son velas de 1 h):
+    subida de más de 4 ATR en las 10 velas anteriores a las 5 últimas, esas 5 en un rango de menos de
+    1,5 ATR, y la vela actual cierra por encima de ese rango."""
+    if i < 20:
         return None
-    return Alerta(ctx.simbolo, i, v.t, dir_, v.c, min(100.0, puntos), motivos)
+    vs, a = ctx.velas, ctx.atr[i - 1] or 1e-9
+    asta = vs[i - 6].c - vs[i - 16].c
+    alto = max(x.h for x in vs[i - 5:i])
+    bajo = min(x.l for x in vs[i - 5:i])
+    if asta > 4 * a and alto - bajo < 1.5 * a and vs[i].c > alto:
+        return f"bandera alcista: subida de {asta / a:.1f} ATR, pausa estrecha y rompe por arriba"
+    return None

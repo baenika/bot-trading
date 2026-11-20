@@ -39,6 +39,9 @@ RANGOS = {
     "espera_barras": [4, 6, 10],
     "max_barras": [24, 48, 72],
     "atr_vela_min": [1.6, 2.0, 2.5],
+    "scout_sobreventa": [False, True],   # alarmas de day-trader-skill: solo se encienden si ganan en los dos tramos
+    "scout_bandera": [False, True],
+    "horas_prohibidas_utc": [[], [0, 1, 2, 3, 4, 5], [20, 21, 22, 23], [12, 13, 14, 15]],
 }
 MIN_OPS_COMPROBAR = 30
 

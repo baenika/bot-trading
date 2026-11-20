@@ -39,6 +39,26 @@ def media_desv(xs: list[float]) -> tuple[float, float]:
     return m, math.sqrt(var)
 
 
+def rsi(cierres: list[float], n: int = 14) -> list[float]:
+    """RSI de Wilder."""
+    out = [50.0] * len(cierres)
+    if len(cierres) <= n:
+        return out
+    sube = baja = 0.0
+    for k in range(1, n + 1):
+        d = cierres[k] - cierres[k - 1]
+        sube += max(d, 0)
+        baja += max(-d, 0)
+    sube, baja = sube / n, baja / n
+    for k in range(n, len(cierres)):
+        if k > n:
+            d = cierres[k] - cierres[k - 1]
+            sube = (sube * (n - 1) + max(d, 0)) / n
+            baja = (baja * (n - 1) + max(-d, 0)) / n
+        out[k] = 100.0 if baja == 0 else 100 - 100 / (1 + sube / baja)
+    return out
+
+
 class Contexto:
     """Precalcula los indicadores de una serie para que los agentes los lean rápido."""
 
@@ -50,6 +70,7 @@ class Contexto:
         self.ema50 = ema(cierres, 50)
         self.ema200 = ema(cierres, 200)
         self.atr = atr(velas, 14)
+        self.rsi = rsi(cierres, 14)
         self.logvol = [math.log(max(v.v, 1e-9)) for v in velas]
         self.rend = [0.0] + [math.log(velas[i].c / velas[i - 1].c) for i in range(1, len(velas))]
 
