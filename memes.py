@@ -4,6 +4,9 @@
     py memes.py grabar --una-vez     # una sola pasada
     py memes.py backtest             # backtest sobre lo grabado
     py memes.py backtest --grid      # compara 24 estrategias sobre lo grabado
+    py memes.py ballena añadir <dirección> [alias]   # seguir una wallet (solo lectura)
+    py memes.py ballena quitar <dirección>
+    py memes.py ballena lista
 
 Viene del Consejo v5 (rama consejo-v5-ayer). Datos públicos de DexScreener y RugCheck,
 sin cuentas ni claves. No hay wallet, ni claves, ni órdenes: todo es dinero ficticio.
@@ -50,7 +53,7 @@ def grabar(params: dict, cada: int, una_vez: bool, grupo: Grupo) -> None:
     from consejo.memes.sources import DexScreener, RugCheck
     r = _rutas()
     eng = MemeEngine(params, CAPITAL)
-    extra = {"watch": {}, "safety": {}, "debated": []}
+    extra = {"watch": {}, "safety": {}, "debated": [], "nombres": {}}
     if os.path.exists(r["estado"]):
         with open(r["estado"], encoding="utf-8") as f:
             st = json.load(f)
@@ -73,11 +76,14 @@ def grabar(params: dict, cada: int, una_vez: bool, grupo: Grupo) -> None:
         return s
 
     from consejo.avisos import Avisador
+    from consejo.memes.ballenas import Ballenas
     avisos = Avisador(grupo, "memes")
     avisos.version()
+    ballenas = Ballenas(os.path.join(r["grabacion"], "ballenas.json"))
     while True:
         try:
             _pasada_memes(eng, ds, rc, extra, r, seguridad_de, grupo)
+            _pasada_ballenas(eng, extra, r, ballenas, grupo)
         except Exception as e:  # noqa: BLE001 - un fallo no tumba la grabación: avisa y sigue
             print(f"Error en la pasada de memes: {e!r}")
             avisos.error(e, "la grabación de memes")
@@ -96,6 +102,9 @@ def _pasada_memes(eng, ds, rc, extra, r, seguridad_de, grupo) -> None:
     for c in pares:
         if eng.desk.scout(c):
             extra["watch"].setdefault(c["mint"], time.time())
+        if c["mint"] in extra["watch"] or c["mint"] in eng.broker.positions:
+            extra["nombres"][c["mint"]] = [c.get("symbol") or c["mint"][:6], c.get("pair")]
+    extra["nombres"] = {m: v for m, v in extra["nombres"].items() if m in extra["watch"] or m in eng.broker.positions}
 
     eventos, debates = eng.step(ts, pares, seguridad_de)
 
@@ -125,6 +134,29 @@ def _pasada_memes(eng, ds, rc, extra, r, seguridad_de, grupo) -> None:
               "last_decision": eng.last_decision, **extra}, r["estado"])
     print(f"{ts[11:16]} · {len(pares)} pares · {len(eng.broker.positions)} abiertas · "
           f"capital ficticio {eng.broker.equity():,.2f} $")
+
+
+def _pasada_ballenas(eng, extra, r, ballenas, grupo) -> list[dict]:
+    """Ballenas de las monedas abiertas y de las que pasaron el Scout (solo lectura, solo informa)."""
+    from consejo.memes.ballenas import texto
+    nombres = extra.get("nombres", {})
+    simbolos = {m: p.get("symbol") or m[:6] for m, p in eng.broker.positions.items()}
+    for m in sorted(extra["watch"], key=lambda m: -extra["watch"][m]):      # las más nuevas primero
+        simbolos.setdefault(m, (nombres.get(m) or [m[:6]])[0])
+    eventos = ballenas.pasada(simbolos, excluir={v[1] for v in nombres.values() if v and v[1]})
+    if not eventos:
+        return []
+    ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with open(os.path.join(r["grabacion"], f"ballenas_{ts[:10]}.jsonl"), "a", encoding="utf-8") as f:
+        for x in eventos:
+            f.write(json.dumps({"ts": ts, **x}) + "\n")
+    abiertas = set(eng.broker.positions)
+    importantes = [x for x in eventos if x["tipo"] in ("venta", "compra", "concentracion")
+                   or x.get("mint") in abiertas or x.get("mint") in extra["watch"]]
+    if importantes:
+        grupo.enviar("scout", "\n".join(texto(x, simbolos) + (" (la tenemos en papel)" if x.get("mint") in abiertas
+                                                              else "") for x in importantes[:8]))
+    return eventos
 
 
 # --- backtest sobre lo grabado ----------------------------------------------------------
@@ -193,9 +225,31 @@ def backtest(params: dict, grid: bool, carpeta: str) -> int:
     return 0
 
 
+def ballena(resto: list[str], ruta: str) -> int:
+    import re
+    from consejo.memes.ballenas import Ballenas
+    b = Ballenas(ruta)
+    orden = (resto or ["lista"])[0].lower()
+    if orden in ("añadir", "anadir", "quitar"):
+        if len(resto) < 2 or not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", resto[1]):
+            print("Falta una dirección pública de Solana válida (solo la dirección, nunca una clave).")
+            return 2
+        if orden == "quitar":
+            b.d["wallets"].pop(resto[1], None)
+        else:
+            b.seguir(resto[1], " ".join(resto[2:]))
+        b.guardar()
+    for w, x in b.d["wallets"].items():
+        print(f"{x.get('alias')}: {w} ({'a mano' if x.get('manual') else 'automática'})")
+    if not b.d["wallets"]:
+        print("No sigo ninguna wallet todavía.")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("accion", choices=["grabar", "backtest"])
+    ap.add_argument("accion", choices=["grabar", "backtest", "ballena"])
+    ap.add_argument("resto", nargs="*", help="ballena: añadir <dirección> [alias] | quitar <dirección> | lista")
     ap.add_argument("--una-vez", action="store_true")
     ap.add_argument("--cada", type=int, default=60, help="segundos entre pasadas al grabar")
     ap.add_argument("--grid", action="store_true")
@@ -209,6 +263,8 @@ def main(argv=None) -> int:
         with open(a.config, encoding="utf-8") as f:
             params = json.load(f)
         seguridad.comprobar_config(params)
+    if a.accion == "ballena":
+        return ballena(a.resto, os.path.join(_rutas()["grabacion"], "ballenas.json"))
     if a.accion == "grabar":
         grabar(params, a.cada, a.una_vez, Grupo(a.telegram))
         return 0

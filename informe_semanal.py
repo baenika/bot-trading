@@ -83,10 +83,18 @@ def bloque_memes(desde: datetime) -> list[str]:
     pos = b.get("positions") or {}
     eq = b.get("cash", 0) + sum(p.get("usd", 0) for p in pos.values())
     rugs = sum("rug" in str(x.get("reason", "")).lower() for x in sem)
+    ball = []
+    for ruta in glob.glob(os.path.join(RAIZ, "datos", "memes", "ballenas_*.jsonl")):
+        if os.path.basename(ruta)[9:19] >= f"{desde:%Y-%m-%d}":
+            with open(ruta, encoding="utf-8") as f:
+                ball += [json.loads(x) for x in f if x.strip()]
+    extra = ([f"• Ballenas: {sum(x['tipo'] == 'venta' for x in ball)} ventas fuertes, "
+              f"{sum(x['tipo'] == 'compra' for x in ball)} compras fuertes, "
+              f"{sum(x['tipo'] == 'concentracion' for x in ball)} monedas muy concentradas"] if ball else [])
     return ["🪙 Memes (Solana, papel)",
             f"• Capital ficticio: unos {eq:,.2f} $ · {len(pos)} abiertas",
             f"• Esta semana: {len(sem)} operaciones, {sum(x.get('pnl', 0) for x in sem):+,.2f} $"
-            + (f", {rugs} por rug" if rugs else "")]
+            + (f", {rugs} por rug" if rugs else "")] + extra
 
 
 def bloque_orb() -> list[str]:

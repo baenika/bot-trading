@@ -684,3 +684,60 @@ def test_alerta_lleva_historial_de_la_misma_senal():
     m = backtest.Motor(series, {**backtest.CONFIG_DEFECTO, "caminos_backtest": 100}).correr()
     assert "📜" in m.bots["scout"]["text"]
     assert any(o["ficha"]["historial"]["n"] > 0 for o in m.operaciones)
+
+
+def _rpc_falso(estado):
+    """RPC de Solana de mentira para tests: devuelve lo que diga `estado`."""
+    def rpc(metodo, params):
+        from consejo.memes.ballenas import LECTURA, SoloLectura
+        if metodo not in LECTURA:
+            raise SoloLectura(metodo)
+        if metodo == "getTokenSupply":
+            return {"value": {"uiAmount": 1000.0}}
+        if metodo == "getTokenLargestAccounts":
+            return {"value": [{"address": f"cta{d}", "uiAmount": v} for d, v in estado["top"].items()]}
+        if metodo == "getMultipleAccounts":
+            return {"value": [{"data": {"parsed": {"info": {"owner": "dueno_" + c[3:]}}}} for c in params[0]]}
+        if metodo == "getSignaturesForAddress":
+            return [{"signature": s} for s in estado["firmas"]]
+        if metodo == "getTransaction":
+            return {"meta": {"preTokenBalances": [{"owner": "W1", "mint": "M2", "uiTokenAmount": {"uiAmount": 0}}],
+                             "postTokenBalances": [{"owner": "W1", "mint": "M2", "uiTokenAmount": {"uiAmount": 500}}]}}
+    return rpc
+
+
+def test_ballenas_venta_compra_concentracion_y_wallets(tmp_path):
+    from consejo.memes.ballenas import Ballenas, texto, rpc_publico, SoloLectura
+    import pytest
+    with pytest.raises(SoloLectura):
+        rpc_publico("sendTransaction", [])
+    est = {"top": {"A": 300.0, "B": 50.0, "POOL": 400.0}, "firmas": ["s1"]}
+    b = Ballenas(str(tmp_path / "b.json"), rpc=_rpc_falso(est))
+    b.seguir("W1", "amigo")
+    ev = b.pasada({"M1": "PEPE"}, excluir={"dueno_POOL"}, ahora=1000.0)
+    assert [x["tipo"] for x in ev] == []          # 35 % sin la pool: no concentrado; primera vez sin avisar
+    est["top"] = {"A": 100.0, "B": 450.0, "POOL": 400.0}
+    est["firmas"] = ["s2", "s1"]
+    ev = b.pasada({"M1": "PEPE"}, excluir={"dueno_POOL"}, ahora=2000.0)
+    tipos = sorted(x["tipo"] for x in ev)
+    assert tipos == ["compra", "concentracion", "venta", "wallet_compra"]
+    venta = next(x for x in ev if x["tipo"] == "venta")
+    assert venta["antes"] == 30.0 and venta["despues"] == 10.0 and "rug" in texto(venta, {})
+    assert next(x for x in ev if x["tipo"] == "wallet_compra")["cantidad"] == 500
+    assert b.d["wallets"]["dueno_B"]["manual"] is False      # la ballena que compró se sigue sola
+    assert b.pasada({"M1": "PEPE"}, ahora=2100.0) == []       # respeta los 5 minutos
+    b2 = Ballenas(str(tmp_path / "b.json"), rpc=_rpc_falso(est))
+    assert "W1" in b2.d["wallets"] and b2.d["monedas"]["M1"]["concentrada"]
+    b2.pasada({}, ahora=2000.0 + 8 * 86400, forzar=True)
+    assert "dueno_B" not in b2.d["wallets"] and "W1" in b2.d["wallets"]   # la automática caduca a los 7 días
+
+
+def test_memes_ballena_cli(tmp_path, monkeypatch, capsys):
+    import memes
+    monkeypatch.setattr(memes, "RAIZ", str(tmp_path))
+    assert memes.main(["ballena", "añadir", "clave-falsa"]) == 2
+    dire = "5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1"
+    assert memes.main(["ballena", "añadir", dire, "la", "gorda"]) == 0
+    assert "la gorda" in capsys.readouterr().out
+    assert memes.main(["ballena", "quitar", dire]) == 0
+    assert "ninguna" in capsys.readouterr().out

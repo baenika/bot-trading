@@ -36,6 +36,7 @@ Bot de trading multi-agente ("el Consejo") de David. Toda la documentación y lo
 - Protecciones de Risk (de day-trader-skill): riesgo del día contando los stops de todas las entradas de hoy ≤ 3 %, 3 entradas/día, posición ≤ 33 %, 10 % en efectivo, un disparo por señal y moneda al día
 - Señales de un canal frente a velas reales: `python senales.py [result.json]` o `--capturas`
 - Memecoins: `python memes.py grabar` (papel + grabación en datos/memes/) y `python memes.py backtest [--grid]`
+- Ballenas (memes): `consejo/memes/ballenas.py`, solo lectura del RPC público de Solana (lista blanca de métodos, sin claves); grandes poseedores de cada moneda vigilada y wallets seguidas (`python memes.py ballena añadir <dirección> [alias]`). Solo informa y graba en datos/memes/ballenas_<fecha>.jsonl. Sin X/Twitter (decidido por David el 20-nov)
 - Estrategia de las 9:30 (SPY/QQQ, 5 min): `python orb.py diario` (actualiza velas + informe)
 - Kronos opcional: `kronos_ruta` en la config; solo vota si está calibrado
 - El bot de ayer (Consejo v5, con Telegram y mesa de memes) está en la rama `consejo-v5-ayer`, carpeta `ayer/`
