@@ -177,18 +177,34 @@ class Minuto:
     ask: tuple[float, float, float, float]
 
 
+AVISOS: list[str] = []
+PAUSA_DUKASCOPY = 3.0           # Dukascopy corta la IP si se le piden muchos archivos seguidos
+DIVISORES = {"XAUUSD": 1000.0}  # Dukascopy guarda precios enteros: oro ×1000, divisas ×100000
+_ultima: dict[str, float] = {}
+
+
+class SinDatos(Exception):
+    pass
+
+
 def _get(url: str) -> bytes | None:
-    for k in range(4):
+    host = url.split("/")[2]
+    if "dukascopy" in host:
+        espera = _ultima.get(host, 0) + PAUSA_DUKASCOPY - time.time()
+        if espera > 0:
+            time.sleep(espera)
+    for k in range(5):
+        _ultima[host] = time.time()
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=60) as r:
                 return r.read()
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 return None
-            time.sleep(3 * 2 ** k)
+            time.sleep((60 if e.code == 429 else 5) * 2 ** k)
         except Exception:  # noqa: BLE001
-            time.sleep(3 * 2 ** k)
-    raise RuntimeError(f"no se pudo bajar {url}")
+            time.sleep(5 * 2 ** k)
+    raise SinDatos(url)
 
 
 def decodificar_bi5(raw: bytes, dia: date, divisor: float) -> list[tuple[datetime, float, float, float, float]]:
@@ -208,7 +224,12 @@ def _cache(ruta: str, url: str) -> bytes | None:
     if os.path.exists(ruta):
         with open(ruta, "rb") as f:
             return f.read()
-    raw = _get(url)
+    try:
+        raw = _get(url)
+    except SinDatos:
+        AVISOS.append(f"no se pudo bajar {url} (se salta ese día)")
+        print(AVISOS[-1])
+        return None
     if raw is not None:
         os.makedirs(os.path.dirname(ruta), exist_ok=True)
         with open(ruta, "wb") as f:
@@ -216,23 +237,51 @@ def _cache(ruta: str, url: str) -> bytes | None:
     return raw
 
 
-def divisor_para(precio_bruto: float, referencia: float) -> float:
-    """Dukascopy guarda precios enteros; elige la escala que deja el precio cerca del de la señal."""
-    return min((10.0 ** k for k in range(0, 7)), key=lambda d: abs(math.log10(precio_bruto / d / referencia)))
-
-
-def minutos_dukascopy(simbolo: str, dia: date, referencia: float) -> list[Minuto]:
+def minutos_dukascopy(simbolo: str, dia: date, referencia: float, lados_=("BID", "ASK")) -> list[Minuto]:
     lados = {}
-    for lado in ("BID", "ASK"):
+    for lado in lados_:
         url = (f"https://datafeed.dukascopy.com/datafeed/{simbolo}/{dia.year}/{dia.month - 1:02d}/"
                f"{dia.day:02d}/{lado}_candles_min_1.bi5")
         raw = _cache(os.path.join(CACHE, "dukascopy", simbolo, f"{dia}_{lado}.bi5"), url)
         if not raw:
             return []
-        primero = struct.unpack(">5if", lzma.decompress(raw)[:24])[2] if raw else 0
-        lados[lado] = {t: v for t, *v in decodificar_bi5(raw, dia, divisor_para(primero, referencia))}
-    return [Minuto(t, tuple(lados["BID"][t]), tuple(lados["ASK"].get(t, lados["BID"][t])))
-            for t in sorted(lados["BID"])]
+        velas = decodificar_bi5(raw, dia, DIVISORES.get(simbolo, 100000.0))
+        if velas and not 0.7 < velas[0][4] / referencia < 1.3:
+            raise ValueError(f"{simbolo} {dia}: precio decodificado {velas[0][4]:g} y la señal habla de "
+                             f"{referencia:g}. La escala de Dukascopy no cuadra; revisa DIVISORES.")
+        lados[lado] = {t: v for t, *v in velas}
+    bid = lados["BID"]
+    ask = lados.get("ASK", bid)
+    return [Minuto(t, tuple(bid[t]), tuple(ask.get(t, bid[t]))) for t in sorted(bid)]
+
+
+def dias_posibles(s: Senal, dias: int) -> set[date] | None:
+    """Filtro rápido con velas DIARIAS (oro: futuros GC=F de Yahoo; cripto: Binance) para no bajar
+    cientos de días de 1 minuto. Margen del 1,5 % porque el futuro cotiza algo por encima del contado."""
+    fuente = FUENTES.get(s.simbolo)
+    try:
+        if fuente and fuente[0] == "binance":
+            ks = json.loads(_get(f"https://data-api.binance.vision/api/v3/klines?symbol={fuente[1]}"
+                                 f"&interval=1d&limit={min(dias + 2, 1000)}") or b"[]")
+            filas = [(datetime.fromtimestamp(int(k[0]) / 1000, tz=timezone.utc).date(), float(k[2]), float(k[3]))
+                     for k in ks]
+        elif fuente and fuente[1] == "XAUUSD":
+            import descargar_datos
+            js = json.loads(_get("https://query2.finance.yahoo.com/v8/finance/chart/GC%3DF?range=2y&interval=1d")
+                            or b"{}")
+            filas = [(datetime.fromisoformat(f[0]).date(), float(f[2]), float(f[3]))
+                     for f in descargar_datos.yahoo_a_filas(js)]
+        else:
+            return None
+    except Exception as e:  # noqa: BLE001
+        print(f"Sin filtro diario ({e}): miro todos los días")
+        return None
+    margen = 0.015 if fuente[0] == "dukascopy" else 0.002
+    ok = set()
+    for d, hi, lo in filas:
+        if lo * (1 - margen) <= s.entrada <= hi * (1 + margen):
+            ok |= {d - timedelta(days=1), d, d + timedelta(days=1)}
+    return ok
 
 
 def minutos_binance(simbolo: str, dia: date) -> list[Minuto]:
@@ -304,11 +353,16 @@ def buscar_fechas(s: Senal, hora: str, dias: int = 365, ventana_min: int = 0, to
     Con `ventana_min` > 0 (la hora que se ve es la de edición), vale cualquier minuto de esa ventana
     anterior y se devuelve el primero que encaja.
     """
-    minutos_de = minutos_de or (lambda dia: minutos_para_dia(s, dia))
+    filtro = None
+    if minutos_de is None:
+        minutos_de = lambda dia: minutos_para_dia(s, dia, ("BID",))  # noqa: E731 - para buscar basta el BID
+        filtro = dias_posibles(s, dias)
     hoy = datetime.now(timezone.utc).date()
     out = []
     for k in range(1, dias + 1):
         dia = hoy - timedelta(days=k)
+        if filtro is not None and dia not in filtro:
+            continue
         t1 = madrid_a_utc(dia, hora)
         t0 = t1 - timedelta(minutes=ventana_min)
         ms = []
@@ -321,11 +375,11 @@ def buscar_fechas(s: Senal, hora: str, dias: int = 365, ventana_min: int = 0, to
     return out
 
 
-def minutos_para_dia(s: Senal, dia: date) -> list[Minuto]:
+def minutos_para_dia(s: Senal, dia: date, lados=("BID", "ASK")) -> list[Minuto]:
     fuente = FUENTES.get(s.simbolo)
     if fuente is None:
         return []
-    return (minutos_dukascopy(fuente[1], dia, s.entrada) if fuente[0] == "dukascopy"
+    return (minutos_dukascopy(fuente[1], dia, s.entrada, lados) if fuente[0] == "dukascopy"
             else minutos_binance(fuente[1], dia))
 
 
@@ -365,6 +419,8 @@ def capturas(ruta: str, dias: int, validez: int) -> str:
                        + (f" · el canal dijo {'TP' + str(s.canal_tp) if s.canal_tp else 'SL'}"
                           if s.canal_tp or s.canal_sl else ""))
         lin.append("")
+    if AVISOS:
+        lin += ["", f"Aviso: {len(AVISOS)} archivos de velas no se pudieron bajar y esos días se saltaron."]
     lin.append("Con 5-6 señales no se puede sacar ninguna conclusión: es solo para ver cómo funciona la comprobación. "
                "La de verdad llega con el export completo del canal.")
     return "\n".join(lin)

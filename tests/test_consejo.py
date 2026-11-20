@@ -527,7 +527,7 @@ def test_senales_dukascopy_y_hora_de_madrid():
     raw = lzma.compress(struct.pack(">5if", 60, 5193500, 5194000, 5190000, 5195000, 1.0))
     v = S.decodificar_bi5(raw, date(2026, 3, 2), 1000)
     assert v[0][0] == datetime(2026, 3, 2, 0, 1, tzinfo=timezone.utc) and v[0][1:] == (5193.5, 5195, 5190, 5194)
-    assert S.divisor_para(5193500, 5190) == 1000
+    assert S.DIVISORES["XAUUSD"] == 1000
     assert S.madrid_a_utc(date(2026, 2, 25), "16:05").hour == 15
     assert S.madrid_a_utc(date(2026, 7, 1), "16:05").hour == 14
 
