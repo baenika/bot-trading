@@ -558,3 +558,11 @@ def test_telegram_un_solo_bot(tmp_path, monkeypatch):
     assert g.activo("news") and enviados[0]["text"].startswith("🛡️ Risk\nhola")
     assert ct.chat_privado({"result": [{"message": {"chat": {"id": 5, "type": "private", "first_name": "D"}}}]}) \
         == ("5", "D")
+
+
+def test_telegram_limpia_el_token_pegado():
+    import configurar_telegram as ct
+    tok = "123456789:" + "A" * 35
+    assert ct.limpiar(f"  {tok}\r\n") == tok
+    assert ct.limpiar("\x16") == ""
+    assert ct.limpiar(f"Use this token to access the HTTP API:\n{tok}\nKeep it secure") == tok
