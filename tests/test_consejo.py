@@ -769,14 +769,15 @@ def test_examen_sin_operaciones_y_titulos_rss_limpios():
 def test_ballenas_con_rugcheck_quita_pools(monkeypatch, tmp_path):
     from consejo.memes import sources
     from consejo.memes.ballenas import Ballenas
-    informe = {"knownAccounts": {"POOLOWNER": {"type": "AMM"}}, "markets": [{"liquidityA": "VAULT"}],
+    informe = {"knownAccounts": {"POOLOWNER": {"type": "AMM"}}, "markets": [{"liquidityA": "VAULT", "liquidityBAccount": {"pubkey": "VB", "owner": "POOLOWNER2"}}],
                "topHolders": [{"owner": "POOLOWNER", "address": "x", "pct": 40},
                               {"owner": "Z", "address": "VAULT", "pct": 20},
+                              {"owner": "POOLOWNER2", "address": "VB", "pct": 9},
                               {"owner": "A", "address": "a1", "pct": 12}, {"owner": "A", "address": "a2", "pct": 3}]}
     monkeypatch.setattr(sources, "_get", lambda url, timeout=15: informe)
     assert sources.RugCheck().poseedores("M") == {"A": 15.0}
     b = Ballenas(str(tmp_path / "b.json"), rpc=None, fuente_poseedores=sources.RugCheck().poseedores)
     b.pasada({"M": "X"}, ahora=1.0, forzar=True)
-    informe["topHolders"][2]["pct"] = 2
+    informe["topHolders"][3]["pct"] = 2
     ev = b.pasada({"M": "X"}, ahora=1000.0)
     assert [x["tipo"] for x in ev] == ["venta"]

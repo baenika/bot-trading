@@ -131,12 +131,18 @@ class RugCheck:
         d = _get(f"{RC}/tokens/{mint}/report", timeout=20)
         conocidas = set((d.get("knownAccounts") or {}).keys())
         for m in d.get("markets") or []:
-            conocidas.update(x for x in (m.get("pubkey"), m.get("liquidityA"), m.get("liquidityB"),
-                                         m.get("liquidityAAccount"), m.get("liquidityBAccount")) if x)
+            for x in (m.get("pubkey"), m.get("liquidityA"), m.get("liquidityB"),
+                      m.get("liquidityAAccount"), m.get("liquidityBAccount")):
+                # según el token, RugCheck da la cuenta como texto o como objeto {pubkey, owner, ...}
+                for v in ((x.get("pubkey"), x.get("owner")) if isinstance(x, dict) else (x,)):
+                    if isinstance(v, str) and v:
+                        conocidas.add(v)
         out = {}
         for h in (d.get("topHolders") or [])[:10]:
             dueno, pct = h.get("owner"), _f(h.get("pct"))
-            if not dueno or pct is None or dueno in conocidas or h.get("address") in conocidas:
+            if not isinstance(dueno, str):
+                dueno = (dueno or {}).get("pubkey") if isinstance(dueno, dict) else None
+            if not dueno or pct is None or dueno in conocidas or str(h.get("address")) in conocidas:
                 continue
             out[dueno] = out.get(dueno, 0.0) + pct
         return out

@@ -446,15 +446,16 @@ def simular(s: Senal, minutos: list[Minuto], validez_min: int = 120,
     if not ms:
         return res
     # entrada: un largo compra al precio de venta (ask); un corto vende al de compra (bid)
+    lo, hi = min(s.zona), max(s.zona)
     i0 = None
     for i, m in enumerate(ms):
         if m.t - desde > timedelta(minutes=validez_min):
             break
-        if d == 1 and m.ask[2] <= s.entrada:
-            i0, px = i, min(s.entrada, m.ask[0])
-            break
-        if d == -1 and m.bid[1] >= s.entrada:
-            i0, px = i, max(s.entrada, m.bid[0])
+        # solo entra si el minuto toca la ZONA de la señal (entre sus dos límites). Si el precio ya está
+        # pasado hacia el SL, no se entra ahí (una entrada pegada al SL encogería la pérdida de forma irreal).
+        lado = m.ask if d == 1 else m.bid
+        if lado[2] <= hi and lado[1] >= lo:
+            i0, px = i, min(hi, max(lo, lado[0]))
             break
     if i0 is None:
         res["estado"] = "no entró" if ms[-1].t - desde > timedelta(minutes=validez_min) else "sin datos"
