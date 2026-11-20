@@ -1,7 +1,7 @@
 import json
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -467,3 +467,94 @@ def test_kronos_probabilidad_sin_modelo():
     r = k.probabilidad(caminos, stop=95, objetivo=104, dir_="long")
     assert (r["p_tp"], r["p_sl"], r["p_none"]) == (25.0, 50.0, 25.0)
     assert k.cargar("") is None
+
+
+# --- señales de un canal de Telegram ---------------------------------------------------------
+
+def _min(t, o, h, l, c, spread=0.0):
+    import senales as S
+    return S.Minuto(t, (o, h, l, c), (o + spread, h + spread, l + spread, c + spread))
+
+
+def test_senales_lee_formatos_del_canal():
+    import senales as S
+    s = S.leer_senal({"id": 1, "date_unixtime": "1700000000",
+                      "text": "SELL XAUUSD AHORA 94 - 96\n\n SL 5204\n\nTP1  5189\nTP2  5182\nTP3  5177"})
+    assert (s.dir, s.entrada, s.zona, s.sl, s.tps) == ("short", 5194, (5194, 5196), 5204, [5189, 5182, 5177])
+    b = S.leer_senal({"id": 2, "date_unixtime": "1700000000", "edited": "x",
+                      "text": [{"type": "bold", "text": "BUY BTCUSD ( 70950 - 70400 )"}, "\n\nSL : 69800\n\nTP1 : 71400"
+                               "\nTP2 : 71850\nTP3 : 75000\nTP3 HIT ✅"]})
+    assert b.simbolo == "BTCUSD" and b.dir == "long" and b.editada and b.canal_tp == 3
+    assert S.leer_senal({"id": 3, "date_unixtime": "0", "text": "BUY XAUUSD 5190 SL 5195 TP1 5200"}) is None
+
+
+def test_senales_export_asigna_avisos_y_simula_sin_mirar_atras():
+    import senales as S
+    t0 = datetime(2026, 3, 2, 15, 5, 30, tzinfo=timezone.utc)
+    s = S.Senal(1, t0, "XAUUSD", "long", 5193.5, (5193.5, 5190), 5187, [5198, 5205, 5230], "")
+    m = lambda k, *v: _min(t0.replace(second=0) + timedelta(minutes=k), *v, spread=0.3)  # noqa: E731
+    ms = [m(0, 5180, 5181, 5179, 5180),          # el minuto del mensaje: no cuenta (sería mirar atrás)
+          m(1, 5194, 5195, 5192, 5193),          # entra (ask baja a 5192,3)
+          m(2, 5193, 5199, 5193, 5198),          # TP1
+          m(3, 5198, 5198, 5192, 5193),          # vuelve a la entrada: en "tercios" sale en BE
+          m(4, 5193, 5193, 5186, 5187)]          # SL original
+    r = S.simular(s, ms, validez_min=60)
+    assert r["estado"] == "entró" and r["entrada_real"] == 5193.5
+    assert r["TP1"]["salida"] == "TP1" and r["TP1"]["R"] > 0
+    assert r["TP2"]["salida"] == "SL" and abs(r["TP2"]["R"] + 1) < 1e-9
+    assert r["tercios"]["salida"] == "BE" and r["tercios"]["R"] > 0
+    assert r["tp_real"] == 1 and r["sl_real"]
+    s.canal_tp = 3
+    s.res = r
+    assert "TP3" in S.veredicto_canal(s)
+
+
+def test_senales_no_entra_y_sl_en_la_vela_de_entrada():
+    import senales as S
+    t0 = datetime(2026, 3, 2, 15, 0, tzinfo=timezone.utc)
+    s = S.Senal(1, t0, "BTCUSD", "short", 72700, (72700, 73100), 74100, [72300, 71300, 66200], "")
+    lejos = [_min(t0 + timedelta(minutes=k), 72000, 72100, 71900, 72000) for k in range(1, 200)]
+    assert S.simular(s, lejos, validez_min=60)["estado"] == "no entró"
+    malo = [_min(t0 + timedelta(minutes=1), 72600, 74200, 72200, 74000)]   # entra, toca SL y TP: cuenta SL
+    r = S.simular(s, malo, validez_min=60)
+    assert r["TP1"]["salida"] == "SL" and r["tp_real"] == 0
+
+
+def test_senales_dukascopy_y_hora_de_madrid():
+    import lzma
+    import struct
+    import senales as S
+    raw = lzma.compress(struct.pack(">5if", 60, 5193500, 5194000, 5190000, 5195000, 1.0))
+    v = S.decodificar_bi5(raw, date(2026, 3, 2), 1000)
+    assert v[0][0] == datetime(2026, 3, 2, 0, 1, tzinfo=timezone.utc) and v[0][1:] == (5193.5, 5195, 5190, 5194)
+    assert S.divisor_para(5193500, 5190) == 1000
+    assert S.madrid_a_utc(date(2026, 2, 25), "16:05").hour == 15
+    assert S.madrid_a_utc(date(2026, 7, 1), "16:05").hour == 14
+
+
+def test_senales_capturas_busca_el_dia_con_velas():
+    import senales as S
+    s = S.Senal(1, datetime(2026, 1, 1, tzinfo=timezone.utc), "XAUUSD", "short", 5176.5, (5176.5, 5178), 5182.5,
+                [5172, 5164, 5157], "")
+    objetivo = datetime.now(timezone.utc).date() - timedelta(days=3)
+
+    def minutos(dia):
+        t = S.madrid_a_utc(objetivo, "13:47")
+        precio = 5177 if dia == t.date() else 4000
+        return [_min(t, precio, precio, precio, precio)]
+    assert S.buscar_fechas(s, "13:47", 10, minutos_de=minutos) == [S.madrid_a_utc(objetivo, "13:47")]
+
+
+def test_telegram_un_solo_bot(tmp_path, monkeypatch):
+    from consejo import telegram
+    import configurar_telegram as ct
+    ruta = tmp_path / "telegram.json"
+    ruta.write_text(json.dumps({"chat_id": "123", "token": "T"}), encoding="utf-8")
+    g = telegram.Grupo(str(ruta), pausa=0)
+    enviados = []
+    monkeypatch.setattr(telegram.urllib.request, "urlopen",
+                        lambda req, timeout: enviados.append(json.loads(req.data)) or __import__("io").BytesIO(b"{}"))
+    g.enviar("risk", "hola")
+    assert g.activo("news") and enviados[0]["text"].startswith("🛡️ Risk\nhola")
+    assert ct.chat_privado({"result": [{"message": {"chat": {"id": 5, "type": "private", "first_name": "D"}}}]}) \
+        == ("5", "D")
