@@ -30,6 +30,7 @@ CONFIG_DEFECTO = {
     "deslizamiento_pct": 0.05,
     "max_barras": 48,
     "espera_barras": 6,
+    "retroceso_pct": 25,          # entrada en retroceso: % del camino hacia el stop
     "caminos_backtest": 1500,
     "caminos_ultima": 10000,
     "permitir_cortos": False,

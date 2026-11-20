@@ -35,6 +35,9 @@ RANGOS = {
     "puntos_para_entrar": [2, 3],
     "z_volumen_min": [2.0, 2.5, 3.0],
     "fomo_atr": [2.5, 3.0, 3.5],
+    "retroceso_pct": [15, 25, 35],       # repaso con David (20/11): sin probar, que decidan los datos
+    "espera_barras": [4, 6, 10],
+    "max_barras": [24, 48, 72],
 }
 MIN_OPS_COMPROBAR = 30
 
