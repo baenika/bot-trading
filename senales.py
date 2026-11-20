@@ -405,7 +405,12 @@ def capturas(ruta: str, dias: int, validez: int) -> str:
         if not fechas:
             lin += ["Ningún día del último año encaja con esa hora y esa zona.", ""]
             continue
-        lin.append(f"Días que encajan: {len(fechas)}" + (" (ambiguo: miro todos)" if len(fechas) > 1 else ""))
+        lin.append(f"Días que encajan: {len(fechas)}" + (f" (ambiguo: simulo los {min(6, len(fechas))} más recientes)"
+                                                         if len(fechas) > 1 else ""))
+        if vent:
+            lin.append(f"La hora de la captura es la de EDICIÓN: el mensaje original pudo salir hasta {vent // 60} h "
+                       "antes, así que tomo como entrada el primer minuto de esa ventana en el que el precio "
+                       "estaba en la zona (es una suposición, no la hora real del mensaje).")
         for t in fechas[:6]:
             s.t = t - timedelta(minutes=1) if vent else t
             r = simular(s, minutos_para(s), validez)
@@ -415,12 +420,15 @@ def capturas(ruta: str, dias: int, validez: int) -> str:
             lin.append(f"- {t:%d/%m/%Y %H:%M} UTC: entra a {r['entrada_real']:g}; velas: "
                        f"{'TP' + str(r['tp_real']) if r['tp_real'] else 'ningún TP'}"
                        f"{' y luego SL' if r['sl_real'] and r['tp_real'] else (' → SL' if r['sl_real'] else '')} · "
-                       + " · ".join(f"{g} {r[g]['R']:+.2f} R" for g in GESTIONES)
+                       + " · ".join(f"{g} {r[g]['R']:+.2f} R" + (" (BE tras TP1)" if r[g]["salida"] == "BE" else "")
+                                    for g in GESTIONES)
                        + (f" · el canal dijo {'TP' + str(s.canal_tp) if s.canal_tp else 'SL'}"
                           if s.canal_tp or s.canal_sl else ""))
         lin.append("")
     if AVISOS:
         lin += ["", f"Aviso: {len(AVISOS)} archivos de velas no se pudieron bajar y esos días se saltaron."]
+    lin.append("R = resultado dividido por el riesgo de la propia señal (de su entrada a su SL). «tercios» cierra "
+               "un tercio en cada TP y, tras el TP1, sube el SL a la entrada (BE).")
     lin.append("Con 5-6 señales no se puede sacar ninguna conclusión: es solo para ver cómo funciona la comprobación. "
                "La de verdad llega con el export completo del canal.")
     return "\n".join(lin)
@@ -452,7 +460,9 @@ def simular(s: Senal, minutos: list[Minuto], validez_min: int = 120,
         res["estado"] = "no entró" if ms[-1].t - desde > timedelta(minutes=validez_min) else "sin datos"
         return res
     res.update(estado="entró", entrada_real=px, t_entrada=ms[i0].t)
-    riesgo = abs(px - s.sl)
+    # R sobre el riesgo QUE PLANTEA LA SEÑAL (entrada→SL), como quien ajusta el lote a ese SL. Si se midiera
+    # con el precio real y este cae justo al lado del SL, un TP pequeño saldría como +5 R de forma artificial.
+    riesgo = abs(s.entrada - s.sl) or abs(px - s.sl)
     tps = (s.tps + [s.tps[-1]] * 3)[:3]
     planes = {"TP1": [(1.0, tps[0])], "TP2": [(1.0, tps[1])], "TP3": [(1.0, tps[2])],
               "tercios": [(1 / 3, tps[0]), (1 / 3, tps[1]), (1 / 3, tps[2])]}
