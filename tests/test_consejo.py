@@ -612,8 +612,8 @@ def test_autoajuste_solo_acepta_lo_permitido_y_mide_tramos(tmp_path, monkeypatch
     monkeypatch.setattr(aprender, "RAIZ", str(tmp_path))
     (tmp_path / "salida").mkdir()
     (tmp_path / "salida" / "config_auto_cripto.json").write_text(json.dumps(
-        {"parametros": {"stop_atr": 2.0, "risk_per_trade_pct": 50, "rr_objetivo": 9}}), encoding="utf-8")
-    assert aprender.cargar_auto("cripto") == {"stop_atr": 2.0}       # nada fuera de lista ni de rango
+        {"parametros": {"stop_max_atr": 2.5, "risk_per_trade_pct": 50, "rr_objetivo": 9}}), encoding="utf-8")
+    assert aprender.cargar_auto("cripto") == {"stop_max_atr": 2.5}       # nada fuera de lista ni de rango
     ops = [{"pnl": 100, "R": 1, "closed": "2024-01-02"}, {"pnl": -50, "R": -0.5, "closed": "2024-01-03"}]
     st = aprender.stats_ops(ops, 10000)
     assert st["n"] == 2 and abs(st["pf"] - 2) < 1e-9 and abs(st["ret"] - 0.5) < 1e-9 and st["dd"] < 0

@@ -36,6 +36,7 @@ CONFIG_DEFECTO = {
     "rr_objetivo": 2.0,
     "rr_minimo": 1.8,
     "stop_atr": 1.5,
+    "stop_max_atr": 3.0,          # tope del stop; tras una vela grande el mínimo de 5 velas suele llegar hasta aquí
     "z_volumen_min": 2.5,
     "atr_vela_min": 2.0,
     "fomo_atr": 3.0,

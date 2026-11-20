@@ -5,7 +5,7 @@
     py aprender.py --telegram         # manda el resumen al bot
 
 Cómo se afina sin hacerse trampas (la regla de los dos tramos):
-1. Las velas REALES se parten en dos: los 2/3 más antiguos para BUSCAR y el último 1/3 para COMPROBAR.
+1. Las velas REALES se parten en dos mitades: la más antigua para BUSCAR y la reciente para COMPROBAR.
 2. En el tramo de búsqueda se prueba mover UN parámetro cada vez a sus valores vecinos.
 3. El mejor cambio solo se acepta si TAMBIÉN gana en el tramo de comprobación (que no ha visto),
    tiene al menos 30 operaciones ahí, profit factor > 1,3 y drawdown < 20 %.
@@ -30,7 +30,7 @@ RAIZ = os.path.dirname(os.path.abspath(__file__))
 
 # solo estos parámetros se tocan solos, y solo dentro de estos valores
 RANGOS = {
-    "stop_atr": [1.2, 1.5, 2.0, 2.5],
+    "stop_max_atr": [2.0, 2.5, 3.0],      # stop_atr casi nunca manda: tras una vela grande decide este tope
     "rr_objetivo": [2.0, 2.5, 3.0],
     "puntos_para_entrar": [2, 3],
     "z_volumen_min": [2.0, 2.5, 3.0],
@@ -85,7 +85,7 @@ def mejor_que(a: dict, b: dict) -> bool:
 
 def autoajuste(series: dict, cfg: dict, noticias: dict, log=print) -> dict:
     ts = sorted(v.t for vs in series.values() for v in (vs[0], vs[-1]))
-    corte = (ts[0] + (ts[-1] - ts[0]) * 2 / 3).replace(minute=0, second=0, microsecond=0)
+    corte = (ts[0] + (ts[-1] - ts[0]) / 2).replace(minute=0, second=0, microsecond=0)
     rapido = {**cfg, "caminos_backtest": min(cfg.get("caminos_backtest", 1500), 300), "kronos_ruta": ""}
     log(f"Tramo de búsqueda: hasta {corte:%Y-%m-%d}; tramo de comprobación: desde {corte:%Y-%m-%d}")
     base_a = evaluar(series, rapido, noticias, None, corte)
@@ -117,7 +117,11 @@ def autoajuste(series: dict, cfg: dict, noticias: dict, log=print) -> dict:
         if mejor_que(st_b, base_b) and st_b["pf"] > 1.3 and st_b["dd"] > -20:
             res["cambio"] = {"parametro": k, "antes": cfg.get(k), "despues": v, "busqueda": st_a, "comprobacion": st_b}
             return res
-    res["motivo"] = "los cambios que mejoraban en búsqueda no aguantan en el tramo de comprobación (sobreajuste)"
+    if base_b["n"] < MIN_OPS_COMPROBAR:
+        res["motivo"] = (f"en el tramo de comprobación solo hay {base_b['n']} operaciones (hacen falta "
+                         f"{MIN_OPS_COMPROBAR}); con tan pocas no me fío de ningún cambio")
+    else:
+        res["motivo"] = "los cambios que mejoraban en búsqueda no mejoran en el tramo de comprobación"
     return res
 
 

@@ -23,7 +23,7 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 PARAMETROS = [("timeframe", "Velas"), ("capital_inicial", "Capital ficticio ($)"),
               ("risk_per_trade_pct", "Riesgo por operación (%)"), ("rr_minimo", "R:R mínimo"),
-              ("stop_atr", "Stop (ATR)"), ("puntos_para_entrar", "Puntos para comprar"),
+              ("stop_atr", "Stop (ATR)"), ("stop_max_atr", "Stop máximo (ATR)"), ("puntos_para_entrar", "Puntos para comprar"),
               ("puntos_para_esperar", "Puntos para esperar retroceso"), ("max_open_positions", "Posiciones a la vez"),
               ("daily_loss_limit_pct", "Pérdida máxima diaria (%)"), ("max_drawdown_pct", "Pérdida máxima total (%)"),
               ("comision_pct", "Comisión (%)"), ("moving_pct", "MOVING (%)"), ("fomo_atr", "FOMO (ATR)"),

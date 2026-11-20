@@ -50,16 +50,17 @@ def planificar(ctx, alerta, cfg: dict) -> Plan:
     a = ctx.atr[i]
     rr = cfg.get("rr_objetivo", 2.0)
     mult = cfg.get("stop_atr", 1.5)
+    tope = cfg.get("stop_max_atr", 3.0)     # el stop nunca más lejos de esto (casi siempre es el que manda)
     if alerta.dir == "long":
         stop = min(e - mult * a, ctx.min_previo(i + 1, 5))
-        stop = max(stop, e - 3 * a)          # nunca un stop absurdo
+        stop = max(stop, e - tope * a)       # nunca un stop absurdo
         obj = e + rr * (e - stop)
         espera = e - 0.25 * (e - stop)
         altos, _ = _niveles(ctx, i)
         estorbo = min((x for x in altos if e * 1.001 < x < obj), default=None)
     else:
         stop = max(e + mult * a, ctx.max_previo(i + 1, 5))
-        stop = min(stop, e + 3 * a)
+        stop = min(stop, e + tope * a)
         obj = e - rr * (stop - e)
         espera = e + 0.25 * (stop - e)
         _, bajos = _niveles(ctx, i)
