@@ -53,3 +53,6 @@ Bot de trading multi-agente ("el Consejo") de David. Toda la documentación y lo
 - Estrategia de las 9:30 (SPY/QQQ, 5 min): `python orb.py diario` (actualiza velas + informe)
 - Kronos opcional: `kronos_ruta` en la config; solo vota si está calibrado
 - El bot de ayer (Consejo v5, con Telegram y mesa de memes) está en la rama `consejo-v5-ayer`, carpeta `ayer/`
+- Fábrica de estrategias (vídeos del 22-nov): `python fabrica.py descargar` (velas 1 h de Dukascopy: oro, Nasdaq 100, S&P 500) y `python fabrica.py <oro|nasdaq|sp500|btc|eth|todo> --n 12000 [--telegram]`. Genera combinaciones de 1-2 condiciones (10 familias + tortugas), stop obligatorio por ATR, riesgo fijo 1 % de 100.000 $, costes por activo (`consejo/fabrica.py` PERFILES). Embudo: filtros dentro de muestra → Monte Carlo (95 % de vueltas ganan) → sin parecidas → vecinos ±20 % (70 % ganan) → fuera de muestra (último 25 % o `--corte`). Informe en salida/fabrica_<activo>.html y en el panel /fabrica
+- Examen de cuenta fondeada: `consejo/fondeo.py` (reto de 2 fases tipo FTMO: +10 % y +5 %, pérdida diaria 5 %, total 10 %, 4 días mínimo). Va en la fábrica y como 5ª casilla del examen del Consejo (backtest y papel). Solo simulado: nada de MetaTrader ni cuentas reales
+- /analizar enseña también los niveles de ayer, de la semana pasada y de 52 semanas

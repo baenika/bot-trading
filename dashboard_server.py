@@ -52,7 +52,34 @@ class Manejador(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(cuerpo)
             return
+        if url.path.rstrip("/") == "/fabrica" or url.path.startswith("/fabrica/"):
+            return self._fabrica(url.path)
         return super().do_GET()
+
+    def _fabrica(self, ruta: str):
+        """Informes de la fábrica de estrategias (salida/fabrica_<activo>.html)."""
+        carpeta = os.path.join(RAIZ, "salida")
+        nombre = ruta.rstrip("/").rsplit("/", 1)[-1]
+        if nombre != "fabrica":
+            archivo = os.path.join(carpeta, f"fabrica_{nombre}.html")
+            if not nombre.isalnum() or not os.path.exists(archivo):
+                return self.send_error(404, "Sin informe: corre antes py fabrica.py <activo>")
+            with open(archivo, "rb") as f:
+                cuerpo = f.read()
+        else:
+            hay = sorted(x[8:-5] for x in os.listdir(carpeta) if x.startswith("fabrica_") and x.endswith(".html")) \
+                if os.path.isdir(carpeta) else []
+            enlaces = "".join(f"<li><a href='/fabrica/{h}'>{h}</a></li>" for h in hay) or \
+                "<li>Todavía no hay informes: corre <code>py fabrica.py oro</code></li>"
+            cuerpo = ("<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
+                      "<title>Fábrica de estrategias</title><body style='font:16px system-ui;margin:24px;"
+                      "background:#f6f7f9;color:#15181d'><h1>🏭 Fábrica de estrategias</h1><ul>"
+                      f"{enlaces}</ul><p><a href='/'>← Volver al panel</a></p></body>").encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(cuerpo)
 
 
 def ip_local() -> str:
