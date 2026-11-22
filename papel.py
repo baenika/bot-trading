@@ -4,6 +4,7 @@
     py papel.py --mesa mercados --una-vez  # una sola pasada (para el Programador de tareas)
     py papel.py --prueba-telegram          # cada bot saluda en el grupo
     py papel.py --mesa mercados --sin-mando  # segunda mesa a la vez: avisa, pero no lee comandos
+    py papel.py --mesa cripto --sin-skeptic  # cartera principal operando todas las señales que permite Risk
     py papel.py --laboratorio --sin-mando    # 🧪 laboratorio: la misma configuración SIN el veto del Skeptic,
                                              #    para ver muchas más operaciones (cartera de papel aparte)
 
@@ -188,7 +189,8 @@ def bajar_velas(s: str, timeframe: str = "1h") -> list[datos.Vela]:
     return solo_cerradas(vs, backtest._duracion(timeframe), datetime.now(timezone.utc))
 
 
-def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str, avisos=None, lab: bool = False) -> None:
+def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str, avisos=None, lab: bool = False,
+           sin_skeptic: bool = False) -> None:
     ahora = datetime.now(timezone.utc)
     dur = backtest._duracion(cfg["timeframe"])
     lista = mesas.CRIPTO if mesa == "cripto" else mesas.MERCADOS
@@ -211,7 +213,7 @@ def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str, avisos=None, la
             avisos.avisar("datos", f"{s}:viejas", f"Las últimas velas de {s} son de {vs[-1].t:%d/%m %H:%M} UTC: "
                                                   "los datos llegan con retraso.")
 
-    m = backtest.Motor(series, cfg, con_skeptic=not lab, noticias=NoticiasEnVivo(ahora))
+    m = backtest.Motor(series, cfg, con_skeptic=not (lab or sin_skeptic), noticias=NoticiasEnVivo(ahora))
     pre = "🧪 Laboratorio · " if lab else ""
     estado = {}
     if os.path.exists(ruta_estado):
@@ -284,6 +286,9 @@ def main(argv=None) -> int:
                     help="no leer comandos de Telegram (solo una copia del bot puede leerlos a la vez)")
     ap.add_argument("--laboratorio", action="store_true",
                     help="cartera aparte SIN el veto del Skeptic: muchas más operaciones para ver cómo actúa")
+    ap.add_argument("--sin-skeptic", action="store_true",
+                    help="opera en la cartera PRINCIPAL sin el veto del Skeptic (como el laboratorio, pero en la "
+                         "vista normal del panel): todas las señales que Risk permita")
     ap.add_argument("--puerto-panel", type=int, default=8000,
                     help="puerto del panel abierto con `dashboard_server.py --red` (0 = no dar enlace)")
     a = ap.parse_args(argv)
@@ -319,14 +324,15 @@ def main(argv=None) -> int:
     avisos = Avisador(grupo, f"papel {a.mesa}{' laboratorio' if a.laboratorio else ''}")
     if grupo.activo("risk") and not a.una_vez:
         grupo.enviar("risk", (f"🧪 Laboratorio {a.mesa} en marcha (papel, sin el veto del Skeptic)."
-                              if a.laboratorio else f"🏛️ Consejo {a.mesa} en marcha (papel).") +
+                              if a.laboratorio else f"🏛️ Consejo {a.mesa} en marcha (papel"
+                              f"{', opera todas las señales que permite Risk' if a.sin_skeptic else ''}).") +
                      (" Escribe /panel para ver los botones." if mando.activo else ""))
         avisos.version()
         if auto:
             avisos.avisar("cambio", json.dumps(auto, sort_keys=True), f"Uso los ajustes aceptados por el autoajuste: {auto}")
     while True:
         try:
-            pasada(a.mesa, cfg, grupo, ruta, avisos, lab=a.laboratorio)
+            pasada(a.mesa, cfg, grupo, ruta, avisos, lab=a.laboratorio, sin_skeptic=a.sin_skeptic)
         except Exception as e:  # noqa: BLE001 - un fallo no tumba el bot: avisa y lo reintenta
             print(f"Error en la pasada: {e!r}")
             avisos.error(e, "la pasada del Consejo")

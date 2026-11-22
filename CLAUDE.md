@@ -33,7 +33,7 @@ Bot de trading multi-agente ("el Consejo") de David. Toda la documentación y lo
 - Análisis bajo pedido: `consejo/analisis.py` (alias como oro, btc, nasdaq); no opera, solo lee velas cerradas
 - Avisos de opción de compra: `papel.texto_opcion` (COMPRAR → 🟢, ESPERAR → 🟡); llegan aunque /avisos silencie los debates
 - Servidor 24/7 (Ubuntu + systemd): `servidor/instalar.sh` y `servidor/LEEME.md`. Solo un proceso lee comandos (el de cripto); la segunda mesa va con `--sin-mando`
-- 🧪 Laboratorio: `python papel.py --laboratorio --sin-mando` = misma config SIN el veto del Skeptic (muchas más operaciones), cartera aparte salida/papel_cripto_lab.json, pestaña «🧪 Lab» del panel
+- Vista principal sin veto: `python papel.py --mesa cripto --sin-skeptic` opera en la cartera PRINCIPAL todas las señales que permite Risk (sin el veto del Skeptic). El 🧪 Laboratorio (`--laboratorio`, cartera aparte) ya no sale en el panel
 - Panel: sin `?fuente` abre el papel en vivo si existe; `?fuente=backtest` para el histórico; el chip «En vivo/Backtest» cambia
 - Reiniciar carteras de papel: `python reiniciar_papel.py <cripto|mercados|lab|memes|copia|todo>` (archiva en salida/archivo/, no borra)
 - Llenados: órdenes límite y take profit solo se llenan si el precio PASA el nivel (tocarlo no basta)
