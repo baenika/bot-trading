@@ -43,6 +43,13 @@ PERFILES = {
                "swap_corto_pct": 0.006, "apalancamiento": 20, "sin_entradas_utc": (20, 23), "intradia": True},
     "SPX500": {"nombre": "S&P 500", "spread": 0.6, "comision_pct": 0.0, "swap_largo_pct": 0.018,
                "swap_corto_pct": 0.006, "apalancamiento": 20, "sin_entradas_utc": (20, 23), "intradia": True},
+    # respaldo con velas de Yahoo si Dukascopy no deja bajar (precios del ETF / futuro, no del CFD)
+    "GC=F": {"nombre": "Oro (futuros GC=F de Yahoo)", "spread": 0.30, "comision_pct": 0.005, "swap_largo_pct": 0.014,
+             "swap_corto_pct": 0.004, "apalancamiento": 20, "sin_entradas_utc": (20, 23), "intradia": False},
+    "QQQ": {"nombre": "Nasdaq 100 (ETF QQQ de Yahoo)", "spread": 0.03, "comision_pct": 0.0, "swap_largo_pct": 0.018,
+            "swap_corto_pct": 0.006, "apalancamiento": 20, "sin_entradas_utc": (20, 23), "intradia": True},
+    "SPY": {"nombre": "S&P 500 (ETF SPY de Yahoo)", "spread": 0.03, "comision_pct": 0.0, "swap_largo_pct": 0.018,
+            "swap_corto_pct": 0.006, "apalancamiento": 20, "sin_entradas_utc": (20, 23), "intradia": True},
     "BTCUSDT": {"nombre": "Bitcoin", "spread": 0.0, "comision_pct": 0.20, "deslizamiento_pct": 0.05,
                 "swap_largo_pct": 0.0, "swap_corto_pct": 0.0, "apalancamiento": 2, "sin_entradas_utc": None,
                 "intradia": False},

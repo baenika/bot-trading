@@ -42,18 +42,42 @@ DESDE = date(2018, 1, 1)
 UA = "Mozilla/5.0 (bot-trading; backtest)"
 
 
+PAUSA = 3.0          # segundos entre peticiones: Dukascopy corta con 503 si se le pide muy seguido
+_ultima = [0.0]
+
+
 def _get(url: str) -> bytes | None:
-    for k in range(5):
+    """Baja una URL con calma. Con 429/503 espera mucho más (1, 2, 4, 8 y 16 min) antes de rendirse."""
+    for k in range(6):
+        espera = _ultima[0] + PAUSA - time.time()
+        if espera > 0:
+            time.sleep(espera)
+        _ultima[0] = time.time()
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=60) as r:
                 return r.read()
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 return None
-            time.sleep((30 if e.code == 429 else 3) * 2 ** k)
+            pausa = 60 * 2 ** k if e.code in (429, 503) else 5 * 2 ** k
+            print(f"  Dukascopy responde {e.code}; espero {pausa} s y reintento…")
+            time.sleep(pausa)
         except Exception:  # noqa: BLE001
-            time.sleep(3 * 2 ** k)
+            time.sleep(5 * 2 ** k)
     raise RuntimeError(f"no se pudo bajar {url}")
+
+
+def _get_cache(url: str, ruta: str) -> bytes | None:
+    """Cada fichero mensual se guarda en datos/dukascopy/: si se corta, al relanzar sigue donde iba."""
+    if os.path.exists(ruta):
+        with open(ruta, "rb") as f:
+            return f.read()
+    raw = _get(url)
+    if raw is not None:
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+        with open(ruta, "wb") as f:
+            f.write(raw)
+    return raw
 
 
 def _decodificar(raw: bytes, base: datetime, rango) -> list[list]:
@@ -87,8 +111,10 @@ def descargar_dukascopy(sim: str, duk: str, rango, desde: date = DESDE) -> str:
         y, m = u.year, u.month
     while (y, m) <= (hoy.year, hoy.month):
         base = datetime(y, m, 1, tzinfo=timezone.utc)
-        raw = _get(f"https://datafeed.dukascopy.com/datafeed/{duk}/{y}/{m - 1:02d}/BID_candles_hour_1.bi5")
-        if raw is None and (y, m) == (hoy.year, hoy.month):
+        url = f"https://datafeed.dukascopy.com/datafeed/{duk}/{y}/{m - 1:02d}/BID_candles_hour_1.bi5"
+        mes_en_curso = (y, m) == (hoy.year, hoy.month)
+        raw = _get(url) if mes_en_curso else _get_cache(url, os.path.join(DATOS, "dukascopy", duk, f"{y}-{m:02d}_h1.bi5"))
+        if raw is None and mes_en_curso:
             # el mes en curso no tiene fichero mensual todavía: se arma con los días ya cerrados
             raw_dias = []
             d = base.date()
@@ -107,13 +133,17 @@ def descargar_dukascopy(sim: str, duk: str, rango, desde: date = DESDE) -> str:
         m += 1
         if m > 12:
             y, m = y + 1, 1
+    _guardar(ruta, filas)
+    print(f"{sim}: {len(filas)} velas de 1 h → {ruta}")
+    return ruta
+
+
+def _guardar(ruta: str, filas: dict) -> None:
     os.makedirs(DATOS, exist_ok=True)
     with open(ruta, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["date", "open", "high", "low", "close", "volume"])
         w.writerows(filas[k] for k in sorted(filas))
-    print(f"{sim}: {len(filas)} velas de 1 h → {ruta}")
-    return ruta
 
 
 def _a_horas(minutos: list[list]) -> list[list]:
@@ -128,9 +158,17 @@ def _a_horas(minutos: list[list]) -> list[list]:
     return list(horas.values())
 
 
+# si Dukascopy no deja bajar, se usa la vela de 1 h de Yahoo que ya baja descargar_datos.py (~2 años)
+RESPALDO_YAHOO = {"XAUUSD": "GC=F", "NAS100": "QQQ", "SPX500": "SPY"}
+
+
 def cargar(alias: str):
     sim, duk, _ = ACTIVOS[alias]
     ruta = os.path.join(DATOS, mesas.archivo(sim, "1h"))
+    respaldo = os.path.join(DATOS, mesas.archivo(RESPALDO_YAHOO.get(sim, sim), "1h"))
+    if not os.path.exists(ruta) and sim in RESPALDO_YAHOO and os.path.exists(respaldo):
+        print(f"Sin velas de Dukascopy para {sim}: uso las de Yahoo ({RESPALDO_YAHOO[sim]}, solo ~2 años).")
+        return fabrica.Datos(RESPALDO_YAHOO[sim], datos.cargar_csv(respaldo))
     if not os.path.exists(ruta):
         if duk is None:
             raise SystemExit(f"Faltan las velas de {sim}: corre antes  py descargar_datos.py cripto")
