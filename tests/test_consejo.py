@@ -842,3 +842,14 @@ def test_aviso_de_opcion_de_compra():
     assert "sin ventaja" not in papel.texto_opcion(u, "cripto") and "no tiene ventaja" in papel.texto_opcion(u, "mercados")
     assert "POSIBLE COMPRA" in papel.texto_opcion({**u, "decision": "ESPERAR", "wait_price": 98.0}, "cripto")
     assert papel.texto_opcion({**u, "decision": "PASAR"}, "cripto") == ""
+
+
+def test_memes_descarta_volumen_inflado():
+    from consejo.memes.desk import MemeDesk
+    d = MemeDesk({})
+    base = {"liq": 80_000, "vol_h1": 120_000, "chg_h1": 10, "buys_h1": 300, "sells_h1": 200}
+    assert not d.onchain(base, None).kills
+    pocas = d.onchain({**base, "buys_h1": 30, "sells_h1": 20, "vol_h1": 150_000}, None).kills
+    assert any("operaciones en 1h" in k for k in pocas) and any("ticket medio" in k for k in pocas)
+    assert not MemeDesk({"min_txns_h1": 0, "max_ticket_medio_usd": 0}).onchain(
+        {**base, "buys_h1": 30, "sells_h1": 20}, None).kills
