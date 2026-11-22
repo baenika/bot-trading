@@ -9,6 +9,9 @@ Dos vigilancias:
    • 🐋🔴 un gordo vende de golpe (≥ `venta_pct` % del suministro)  → posible salida antes de un rug
    • 🐋🟢 aparece o crece un gordo (≥ `compra_pct` % del suministro) → compra fuerte
    • ⚠️ los 10 mayores (sin contar la pool) tienen ≥ `concentracion_pct` % → riesgo de que la tiren
+   Para que cuente como BALLENA de verdad (y no «ha subido algo») el cambio también tiene que valer
+   dinero: con el market cap de la moneda se pasa el % a dólares y hace falta mover ≥ `min_mov_usd`
+   y tener ≥ `min_ballena_usd` (antes o después). Sin market cap no se avisa: solo se graba.
 
 2. Wallets seguidas (datos/memes/ballenas.json): sus transacciones nuevas (getSignaturesForAddress
    + getTransaction) y qué tokens compraron o vendieron (diferencia de saldos antes/después).
@@ -83,7 +86,8 @@ def _corta(x: str) -> str:
 class Ballenas:
     def __init__(self, ruta: str, rpc=rpc_publico, venta_pct: float = 2.0, compra_pct: float = 2.0,
                  concentracion_pct: float = 50.0, max_monedas: int = 5, max_wallets: int = 10,
-                 cada_s: int = 300, dias_auto: float = 7.0, pausa_s: float = 0.0, fuente_poseedores=None):
+                 cada_s: int = 300, dias_auto: float = 7.0, pausa_s: float = 0.0, fuente_poseedores=None,
+                 min_mov_usd: float = 10_000, min_ballena_usd: float = 25_000, min_wallet_usd: float = 5_000):
         self.ruta, self.rpc_crudo, self.pausa = ruta, rpc, pausa_s
         # quién tiene cada moneda: por defecto el RPC; en memes.py, RugCheck (el RPC público limita mucho
         # getTokenLargestAccounts). Debe devolver {dueño: % del suministro} sin pools.
@@ -91,6 +95,8 @@ class Ballenas:
         self.espera = cada_s           # sube si el RPC frena (429) y vuelve a cada_s cuando responde
         self.venta, self.compra, self.conc = venta_pct, compra_pct, concentracion_pct
         self.max_monedas, self.max_wallets, self.cada, self.dias_auto = max_monedas, max_wallets, cada_s, dias_auto
+        # umbrales en dólares (ver docstring): una ballena mueve y tiene dinero de verdad
+        self.min_mov, self.min_ballena, self.min_wallet = min_mov_usd, min_ballena_usd, min_wallet_usd
         self.ultima = 0.0
         try:
             with open(ruta, encoding="utf-8") as f:
@@ -139,21 +145,31 @@ class Ballenas:
             out[dueno] = out.get(dueno, 0.0) + 100.0 * float(c.get("uiAmount") or 0) / total
         return out
 
-    def revisar_moneda(self, mint: str, simbolo: str, excluir: set, ahora: float) -> list[dict]:
+    def revisar_moneda(self, mint: str, simbolo: str, excluir: set, ahora: float, mcap: float | None = None) -> list[dict]:
         antes = self.d["monedas"].get(mint, {}).get("top", {})
         ahora_top = self.poseedores(mint, excluir)
         ev = []
+        usd = (lambda pct: round(pct / 100 * mcap, 0)) if mcap else (lambda pct: None)
         if antes:
             for w in set(antes) | set(ahora_top):
                 dif = ahora_top.get(w, 0.0) - antes.get(w, 0.0)
                 # si salió del top 10 no sabemos cuánto le queda: solo cuenta como venta si era gordo
                 if dif <= -self.venta and (w in ahora_top or antes[w] >= self.venta * 2):
-                    ev.append({"tipo": "venta", "mint": mint, "symbol": simbolo, "wallet": w,
-                               "antes": round(antes.get(w, 0), 2), "despues": round(ahora_top.get(w, 0), 2),
-                               "fuera_top": w not in ahora_top})
+                    tipo = "venta"
                 elif dif >= self.compra:
-                    ev.append({"tipo": "compra", "mint": mint, "symbol": simbolo, "wallet": w,
-                               "antes": round(antes.get(w, 0), 2), "despues": round(ahora_top[w], 2)})
+                    tipo = "compra"
+                else:
+                    continue
+                x = {"tipo": tipo, "mint": mint, "symbol": simbolo, "wallet": w,
+                     "antes": round(antes.get(w, 0), 2), "despues": round(ahora_top.get(w, 0), 2),
+                     "usd_antes": usd(antes.get(w, 0)), "usd_despues": usd(ahora_top.get(w, 0)),
+                     "usd_mov": usd(abs(dif)), "mcap": mcap}
+                if tipo == "venta":
+                    x["fuera_top"] = w not in ahora_top
+                if not self.es_ballena(x):
+                    x["tipo"] = "movimiento"      # se graba, pero no se avisa ni se copia ni se sigue
+                    x["lado"] = tipo
+                ev.append(x)
         top10 = sum(ahora_top.values())
         estaba = self.d["monedas"].get(mint, {}).get("concentrada", False)
         if top10 >= self.conc and not estaba:
@@ -161,6 +177,12 @@ class Ballenas:
         self.d["monedas"][mint] = {"symbol": simbolo, "top": {w: round(p, 3) for w, p in ahora_top.items()},
                                    "concentrada": top10 >= self.conc, "t": ahora}
         return ev
+
+    def es_ballena(self, x: dict) -> bool:
+        """Ballena = mueve ≥ min_mov_usd y tiene (antes o después) ≥ min_ballena_usd. Sin precio: no."""
+        if x.get("usd_mov") is None:
+            return False
+        return x["usd_mov"] >= self.min_mov and max(x["usd_antes"] or 0, x["usd_despues"] or 0) >= self.min_ballena
 
     # --- 2. wallets seguidas -----------------------------------------------------------------
 
@@ -188,8 +210,10 @@ class Ballenas:
     # --- pasada ------------------------------------------------------------------------------
 
     def pasada(self, monedas: dict, excluir: set | None = None, ahora: float | None = None,
-               forzar: bool = False) -> list[dict]:
-        """`monedas` = {mint: símbolo} que vigila la mesa (abiertas primero). Devuelve los eventos."""
+               forzar: bool = False, mercado: dict | None = None) -> list[dict]:
+        """`monedas` = {mint: símbolo} que vigila la mesa (abiertas primero). `mercado` = {mint: {"mcap",
+        "price"}} para pasar los movimientos a dólares. Devuelve los eventos."""
+        mercado = mercado or {}
         ahora = ahora or time.time()
         if not forzar and ahora - self.ultima < self.espera:
             return []
@@ -203,7 +227,7 @@ class Ballenas:
         frenado = False
         for mint in turno:
             try:
-                ev += self.revisar_moneda(mint, monedas[mint], excluir, ahora)
+                ev += self.revisar_moneda(mint, monedas[mint], excluir, ahora, (mercado.get(mint) or {}).get("mcap"))
             except Frenado:
                 frenado = True
                 break
@@ -216,7 +240,13 @@ class Ballenas:
                              if w.get("manual") or (w.get("hasta") or 0) > ahora}
         for wallet in ([] if frenado else list(self.d["wallets"])[:self.max_wallets]):
             try:
-                ev += self.revisar_wallet(wallet)
+                for x in self.revisar_wallet(wallet):
+                    precio = (mercado.get(x["mint"]) or {}).get("price")
+                    x["usd"] = round(abs(x["cantidad"]) * precio, 0) if precio else None
+                    # una wallet que sigues a mano se avisa siempre; las automáticas solo si mueven dinero
+                    if not self.d["wallets"][wallet].get("manual") and (x["usd"] or 0) < self.min_wallet:
+                        x["lado"], x["tipo"] = x["tipo"], "movimiento"
+                    ev.append(x)
             except Frenado:
                 frenado = True
                 break
@@ -244,16 +274,27 @@ def cambios_tokens(tx: dict | None, wallet: str) -> dict:
     return {m: round(v, 6) for m, v in saldo.items() if abs(v) > 1e-9}
 
 
+def _usd(v) -> str:
+    if v is None:
+        return "?"
+    return f"{v / 1e6:.1f} M$" if v >= 1e6 else f"{v / 1e3:.0f}k $" if v >= 1e3 else f"{v:.0f} $"
+
+
 def texto(x: dict, simbolos: dict) -> str:
     sim = x.get("symbol") or simbolos.get(x.get("mint"), _corta(x.get("mint", "")))
     if x["tipo"] == "venta":
         fin = " y sale del top 10" if x.get("fuera_top") else ""
-        return (f"🐋🔴 {sim}: la wallet {_corta(x['wallet'])} pasa de {x['antes']:.1f} % a "
-                f"{x['despues']:.1f} % del suministro{fin}. Ojo: puede ser una salida antes de un rug.")
+        return (f"🐋🔴 {sim}: la ballena {_corta(x['wallet'])} vende {_usd(x.get('usd_mov'))} "
+                f"({x['antes']:.1f} % → {x['despues']:.1f} % del suministro){fin}. Antes tenía {_usd(x.get('usd_antes'))}. "
+                "Ojo: puede ser una salida antes de un rug.")
     if x["tipo"] == "compra":
-        return (f"🐋🟢 {sim}: la wallet {_corta(x['wallet'])} sube de {x['antes']:.1f} % a {x['despues']:.1f} % "
-                "del suministro. La sigo 7 días.")
+        return (f"🐋🟢 {sim}: la ballena {_corta(x['wallet'])} compra {_usd(x.get('usd_mov'))} "
+                f"({x['antes']:.1f} % → {x['despues']:.1f} % del suministro) y ya tiene {_usd(x.get('usd_despues'))}. "
+                f"Es ballena porque mueve más de 10k $ y tiene más de 25k $ (market cap {_usd(x.get('mcap'))}). "
+                "La sigo 7 días.")
     if x["tipo"] == "concentracion":
         return f"⚠️ {sim}: los 10 mayores (sin la pool) tienen el {x['top10']:.0f} % del suministro."
-    verbo = "compra" if x["tipo"] == "wallet_compra" else "vende"
-    return f"🐋 {x.get('alias') or _corta(x['wallet'])} {verbo} {abs(x['cantidad']):,.0f} de {sim}."
+    lado = x.get("lado", x["tipo"])
+    verbo = "compra" if lado in ("wallet_compra", "compra") else "vende"
+    valor = f" (≈ {_usd(x['usd'])})" if x.get("usd") else ""
+    return f"🐋 {x.get('alias') or _corta(x['wallet'])} {verbo} {abs(x.get('cantidad') or 0):,.0f} de {sim}{valor}."

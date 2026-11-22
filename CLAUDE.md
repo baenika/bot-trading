@@ -41,7 +41,7 @@ Bot de trading multi-agente ("el Consejo") de David. Toda la documentación y lo
 - Memes anti volumen inflado: `min_txns_h1` y `max_ticket_medio_usd` en consejo/memes/desk.py
 - Entrada por confluencia: probada el 22-nov y descartada (sale peor que el retroceso en %)
 - Ballenas BTC/ETH y mercados: `python ballenas_vivo.py` (aggTrades públicos de Binance: órdenes del mismo lado en el mismo segundo ≥ 250k $ BTC / 100k $ ETH; señal si el neto de la hora ≥ 2 M$ / 0,8 M$ y compras ≥ 2× ventas; COT de la CFTC por código de contrato, señal si los fondos suben su neto ≥ 3 % del interés abierto). Copia en papel: salida/copia_cripto.json y copia_mercados.json; graba en datos/ballenas/. /ballenas en Telegram
-- Copia de ballenas de memes: memes.py copia en papel (salida/copia_memes.json) las compras de ballenas y wallets seguidas con las reglas de la mesa
+- Copia de ballenas de memes: memes.py copia en papel (salida/copia_memes.json) las compras de ballenas y wallets seguidas con las reglas de la mesa. Una ballena de memes tiene que mover ≥ 10k $ y tener ≥ 25k $ (con el market cap); si no, el evento es «movimiento» y solo se graba (min_mov_usd, min_ballena_usd, min_wallet_usd en consejo/memes/ballenas.py)
 - Panel en el móvil (mismo wifi): `python dashboard_server.py --red`
 - Aprender/autoajuste semanal: `python aprender.py [--telegram]`. Regla de dos tramos (mitad antigua buscar, mitad reciente comprobar), un cambio como mucho, solo parámetros de RANGOS; lo aceptado va a salida/config_auto_<mesa>.json
 - Avisos al móvil: `consejo/avisos.py` (errores, datos que no llegan, paradas, versión nueva, autoajuste); máximo uno igual cada 6 h

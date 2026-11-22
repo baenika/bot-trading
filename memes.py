@@ -200,8 +200,9 @@ def copiar_memes(copia: MemeBroker, c: dict, x: dict, ts: str, grupo, p: dict) -
             return
         usd = copia.equity() * p["max_position_pct"] / 100
         quien = x.get("alias") or str(x.get("wallet", ""))[:6]
-        motivo = (f"la ballena {quien} sube del {x.get('antes')} % al {x.get('despues')} %" if x["tipo"] == "compra"
-                  else f"la wallet seguida {quien} compra")
+        cuanto = f" (compra ≈ {x['usd_mov']:,.0f} $)" if x.get("usd_mov") else f" (≈ {x['usd']:,.0f} $)" if x.get("usd") else ""
+        motivo = (f"la ballena {quien} sube del {x.get('antes')} % al {x.get('despues')} %{cuanto}" if x["tipo"] == "compra"
+                  else f"la wallet seguida {quien} compra{cuanto}")
         pos = copia.open(c, usd, ts, {"motivo": motivo})
         if pos:
             grupo.enviar("risk", f"🐋 Copia memes · 📥 Compro en papel ${c.get('symbol')} a {c['price']:.6g} · "
@@ -226,7 +227,8 @@ def _pasada_ballenas(eng, extra, r, ballenas, grupo) -> list[dict]:
     vigiladas = dict(extra["watch"])
     for m in sorted(vigiladas, key=lambda m: -vigiladas[m]):      # las más nuevas primero
         simbolos.setdefault(m, (nombres.get(m) or [m[:6]])[0])
-    eventos = ballenas.pasada(simbolos, excluir={v[1] for v in nombres.values() if v and v[1]})
+    mercado = {m: {"mcap": c.get("mcap"), "price": c.get("price")} for m, c in getattr(eng, "ultimos", {}).items()}
+    eventos = ballenas.pasada(simbolos, excluir={v[1] for v in nombres.values() if v and v[1]}, mercado=mercado)
     if not eventos:
         return []
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -238,8 +240,10 @@ def _pasada_ballenas(eng, extra, r, ballenas, grupo) -> list[dict]:
             if x["tipo"] in ("compra", "wallet_compra") and x.get("mint") in getattr(eng, "ultimos", {}):
                 copiar_memes(eng.copia, eng.ultimos[x["mint"]], x, ts, grupo, eng.p)
     abiertas = set(eng.broker.positions)
-    importantes = [x for x in eventos if x["tipo"] in ("venta", "compra", "concentracion")
-                   or x.get("mint") in abiertas or x.get("mint") in vigiladas]
+    # «movimiento» = cambió algo pero no llega a ballena (poco dinero o sin precio): solo se graba
+    importantes = [x for x in eventos if x["tipo"] != "movimiento" and (
+                   x["tipo"] in ("venta", "compra", "concentracion")
+                   or x.get("mint") in abiertas or x.get("mint") in vigiladas)]
     if importantes:
         grupo.enviar("scout", "\n".join(texto(x, simbolos) + (" (la tenemos en papel)" if x.get("mint") in abiertas
                                                               else "") for x in importantes[:8]))
