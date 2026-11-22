@@ -917,3 +917,12 @@ def test_reiniciar_papel_archiva_sin_borrar(tmp_path):
     assert not (tmp_path / "papel_cripto.json").exists()
     assert list((tmp_path / "archivo").glob("*/papel_cripto.json"))
     assert rp.reiniciar("copia", str(tmp_path)) == ["copia_btc.json"]
+
+
+def test_curva_del_papel_se_mueve_con_posiciones_abiertas():
+    import papel
+    from types import SimpleNamespace
+    vs = datos.sinteticas("BTCUSDT", 50, 30000, semilla=4)
+    m = SimpleNamespace(capital=10000.0, abiertas={"BTCUSDT": {"dir": "long", "entry": vs[10].c, "size": 0.1}})
+    v = papel.valor_cartera(m, {"BTCUSDT": vs}, vs[20].t)
+    assert abs(v - (10000 + (vs[20].c - vs[10].c) * 0.1)) < 1e-6

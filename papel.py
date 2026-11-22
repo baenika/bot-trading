@@ -154,6 +154,18 @@ def texto_opcion(u: dict, mesa: str) -> str:
     return ""
 
 
+def valor_cartera(m, series: dict, t) -> float:
+    """Capital + lo que ganan o pierden AHORA las posiciones abiertas (al último cierre conocido en t),
+    para que la curva del panel se mueva con el mercado y no solo al cerrar operaciones."""
+    total = m.capital
+    for s, p in m.abiertas.items():
+        vs = [v for v in series.get(s, []) if v.t <= t]
+        if vs:
+            signo = 1 if p["dir"] == "long" else -1
+            total += signo * (vs[-1].c - p["entry"]) * p["size"]
+    return total
+
+
 def explicar_entrada(p: dict) -> str:
     """Por qué entró, con lo que vio el Consejo (la ficha), para que se entienda cada operación."""
     f = p.get("ficha") or {}
@@ -233,7 +245,7 @@ def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str, avisos=None, la
         for o in m.operaciones[antes_ops:]:
             grupo.enviar("risk", f"{pre}{'🟢' if o['pnl'] > 0 else '🔴'} Cerrado {o['symbol']} por {o['reason']}: "
                                  f"{o['pnl']:+.2f} ({o['R']:+.2f}R) · capital ficticio {m.capital:,.2f}")
-        punto = (backtest._fmt(t), round(m.capital, 2))
+        punto = (backtest._fmt(t), round(valor_cartera(m, series, t), 2))
         if m.curva and m.curva[-1][0] == punto[0]:
             m.curva[-1] = punto          # un punto por hora, no uno por símbolo
         else:
