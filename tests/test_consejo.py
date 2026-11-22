@@ -926,3 +926,68 @@ def test_curva_del_papel_se_mueve_con_posiciones_abiertas():
     m = SimpleNamespace(capital=10000.0, abiertas={"BTCUSDT": {"dir": "long", "entry": vs[10].c, "size": 0.1}})
     v = papel.valor_cartera(m, {"BTCUSDT": vs}, vs[20].t)
     assert abs(v - (10000 + (vs[20].c - vs[10].c) * 0.1)) < 1e-6
+
+
+def test_ballenas_binance_agrupan_ordenes_troceadas_y_dan_senal():
+    from consejo import ballenas_mercado as bm
+    t0 = 1_795_316_772_000
+    trades = [{"a": i, "p": "60000", "q": "2", "T": t0 + i, "m": False} for i in range(3)]          # 360k$ compra
+    trades += [{"a": 9, "p": "60000", "q": "1", "T": t0 + 5, "m": True}]                          # 60k$ venta
+    trades += [{"a": 10, "p": "60000", "q": "5", "T": t0 + 2000, "m": True}]                      # 300k$ venta
+    imp = bm.impresiones(trades, "BTCUSDT")
+    assert [(x["lado"], x["usd"]) for x in imp] == [("compra", 360000.0), ("venta", 300000.0)]
+    paginas = [[{"a": 1, "p": "1", "q": "1", "T": t0, "m": False}], trades, []]
+    f = bm.FlujoBinance(["BTCUSDT"], get=lambda url: paginas.pop(0))
+    f.leer()                    # la primera lectura solo marca desde dónde empezar
+    f.leer()
+    horas = f.horas_cerradas(ahora=t0 / 1000 + 7200)
+    assert len(horas) == 1 and horas[0][2]["compra"] == 360000.0 and horas[0][2]["venta"] == 300000.0
+    assert bm.senal_flujo("BTCUSDT", {"compra": 3e6, "venta": 5e5, "n": 9})
+    assert bm.senal_flujo("BTCUSDT", {"compra": 3e6, "venta": 2e6, "n": 9}) is None
+
+
+def test_cot_de_la_cftc_resumen_y_senal():
+    from consejo import ballenas_mercado as bm
+    filas = [{"report_date_as_yyyy_mm_dd": "2026-11-17T00:00:00.000", "m_money_positions_long_all": "121994",
+              "m_money_positions_short_all": "19052", "open_interest_all": "500000"},
+             {"report_date_as_yyyy_mm_dd": "2026-11-10T00:00:00.000", "m_money_positions_long_all": "100000",
+              "m_money_positions_short_all": "20000", "open_interest_all": "490000"}]
+    r = bm.cot_resumen("088691", filas)
+    assert r["simbolo"] == "GC=F" and r["cambio"] == 22942 and r["cambio_pct_oi"] > 3
+    assert "Oro" in bm.senal_cot(r) and "🟢" in bm.texto_cot(r)
+    tff = [{"report_date_as_yyyy_mm_dd": "2026-11-17", "lev_money_positions_long": "10", "lev_money_positions_short": "60",
+            "open_interest_all": "1000"}, {"report_date_as_yyyy_mm_dd": "2026-11-10", "lev_money_positions_long": "10",
+                                           "lev_money_positions_short": "10", "open_interest_all": "1000"}]
+    r2 = bm.cot_resumen("13874A", tff)
+    assert r2["cambio"] == -50 and bm.senal_cot(r2) is None and "🔴" in bm.texto_cot(r2)
+
+
+def test_copia_de_memes_compra_y_se_cierra_con_las_reglas_de_la_mesa(tmp_path):
+    import memes
+    from consejo.memes.desk import DEFAULTS
+    enviados = []
+    grupo = type("G", (), {"enviar": lambda self, b, t: enviados.append(t)})()
+    copia = memes.copia_memes(DEFAULTS, str(tmp_path / "copia_memes.json"))
+    c = {"mint": "M1", "symbol": "PEPE", "price": 1.0, "liq": 1_000_000}
+    memes.copiar_memes(copia, c, {"tipo": "compra", "wallet": "W", "antes": 1, "despues": 4}, "2026-11-22T03:00:00",
+                       grupo, DEFAULTS)
+    assert "M1" in copia.positions and "Copio" not in enviados[0] and "Compro en papel" in enviados[0]
+    memes.actualizar_copia_memes(copia, {}, "2026-11-22T03:01:00", grupo)        # sin precio: no se toca
+    assert "M1" in copia.positions
+    memes.actualizar_copia_memes(copia, {"M1": {**c, "price": 0.9}}, "2026-11-22T03:02:00", grupo)
+    assert not copia.positions and "Cerrada" in enviados[-1]
+    assert (tmp_path / "copia_memes.json").exists()
+
+
+def test_mando_ballenas(tmp_path, monkeypatch):
+    from consejo import mando, telegram
+    import ballenas_vivo
+    ruta = tmp_path / "telegram.json"
+    ruta.write_text(json.dumps({"chat_id": "77", "token": "T"}), encoding="utf-8")
+    m = mando.Mando(telegram.Grupo(str(ruta), pausa=0), backtest.CONFIG_DEFECTO, str(tmp_path / "p.json"))
+    dichos = []
+    monkeypatch.setattr(m, "_api", lambda metodo, datos, timeout=10: dichos.append(datos) or {})
+    assert "Todavía no hay datos" in ballenas_vivo.texto_ballenas(str(tmp_path))
+    monkeypatch.setattr(ballenas_vivo, "texto_ballenas", lambda salida: "resumen ballenas")
+    m.atender({"message": {"chat": {"id": 77}, "text": "/ballenas"}})
+    assert dichos[-1]["text"] == "resumen ballenas"

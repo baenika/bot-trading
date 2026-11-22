@@ -4,6 +4,7 @@ Solo obedece a David: su chat privado (el de telegram.json) y, dentro del grupo 
 los mensajes y botones que pulsa él. Comandos y botones:
     /panel              botones
     /analizar [activos] análisis ahora (por defecto BTC, ETH, S&P 500, Nasdaq y oro; p. ej. /analizar oro btc)
+    /ballenas           qué hacen las ballenas y cómo va copiarlas en papel
     /cartera            capital ficticio, posiciones abiertas y últimas operaciones (cripto y memes)
     /parametros         la configuración con la que está operando en papel
     /avisos             silencia o reactiva los avisos de decisiones (el bot sigue trabajando igual)
@@ -41,7 +42,7 @@ def _botones(avisos: bool, url_panel: str = "") -> dict:
         [{"text": "🔍 Analizar ahora", "callback_data": "/analizar"}, {"text": "💼 Cartera", "callback_data": "/cartera"}],
         [{"text": "⚙️ Parámetros", "callback_data": "/parametros"},
          {"text": "🔔 Avisos ON" if avisos else "🔕 Avisos OFF", "callback_data": "/avisos"}],
-        [{"text": "📊 Enlace del panel", "callback_data": "/dashboard"}],
+        [{"text": "🐋 Ballenas", "callback_data": "/ballenas"}, {"text": "📊 Enlace del panel", "callback_data": "/dashboard"}],
         [{"text": "🥇 Oro", "callback_data": "/analizar oro"}, {"text": "₿ BTC", "callback_data": "/analizar btc"},
          {"text": "📈 Nasdaq", "callback_data": "/analizar nasdaq"}]]}
 
@@ -143,6 +144,9 @@ class Mando:
             except Exception as e:  # noqa: BLE001
                 self._decir(f"No he podido analizar ahora ({type(e).__name__}). Lo intento en la próxima.", chat=chat)
             return None if resto else "analizar"
+        elif orden == "/ballenas":
+            import ballenas_vivo
+            self._decir(ballenas_vivo.texto_ballenas(os.path.join(RAIZ, "salida")), chat=chat)
         elif orden == "/cartera":
             self._decir(texto_cartera(self.ruta_estado, self.ruta_memes), chat=chat)
         elif orden == "/parametros":

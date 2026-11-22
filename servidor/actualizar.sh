@@ -19,6 +19,6 @@ from consejo.telegram import Grupo
 Avisador(Grupo('telegram.json'), 'servidor').avisar('error', 'tests', 'La versión nueva del repo no pasa los tests: sigo con la anterior. Revísalo.')"
     exit 1
 fi
-for s in consejo-cripto consejo-mercados consejo-memes; do
+for s in consejo-cripto consejo-mercados consejo-memes consejo-ballenas; do
     systemctl try-restart "$s.service"
 done
