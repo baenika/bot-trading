@@ -28,6 +28,7 @@ import time
 from datetime import datetime, timezone
 
 from consejo import seguridad
+from consejo.memes.broker import MemeBroker
 from consejo.memes.engine import MemeEngine
 from consejo.telegram import Grupo
 
@@ -66,6 +67,8 @@ def grabar(params: dict, cada: int, una_vez: bool, grupo: Grupo) -> None:
         eng.last_decision = st.get("last_decision")
         extra.update({k: st.get(k, extra[k]) for k in extra})
 
+    eng.copia = copia_memes(eng.p)            # 🐋 cartera aparte que copia en papel las compras de ballenas
+    eng.ultimos = {}
     ds, rc = DexScreener(), RugCheck()
     rc.cache.update(extra["safety"])
     os.makedirs(r["grabacion"], exist_ok=True)
@@ -106,8 +109,13 @@ def _pasada_memes(eng, ds, rc, extra, r, seguridad_de, grupo) -> None:
     nuevos = ds.latest_mints(60)
     limite = time.time() - 72 * 3600          # vigila 72 h todo lo que pasó el Scout, para grabar su final
     extra["watch"] = {m: t for m, t in extra["watch"].items() if t > limite}
-    mints = list(dict.fromkeys(nuevos + list(eng.broker.positions) + list(extra["watch"])))[:600]
+    copia = getattr(eng, "copia", None)
+    mints = list(dict.fromkeys(nuevos + list(eng.broker.positions) + list(copia.positions if copia else [])
+                               + list(extra["watch"])))[:600]
     pares = ds.pairs_for(mints)
+    eng.ultimos = {c["mint"]: c for c in pares}
+    if copia:
+        actualizar_copia_memes(copia, eng.ultimos, ts, grupo)
     for c in pares:
         if eng.desk.scout(c):
             extra["watch"].setdefault(c["mint"], time.time())
@@ -145,6 +153,63 @@ def _pasada_memes(eng, ds, rc, extra, r, seguridad_de, grupo) -> None:
           f"capital ficticio {eng.broker.equity():,.2f} $", flush=True)
 
 
+RUTA_COPIA = os.path.join(RAIZ, "salida", "copia_memes.json")
+_CANDADO = __import__("threading").Lock()     # la copia la tocan el bucle de memes y el hilo de ballenas
+
+
+def copia_memes(p: dict, ruta: str | None = None) -> MemeBroker:
+    b = MemeBroker(CAPITAL, p)
+    ruta = ruta or RUTA_COPIA
+    if os.path.exists(ruta):
+        try:
+            b.load_json(ruta)
+        except (OSError, ValueError):
+            pass
+    b.ruta = ruta
+    return b
+
+
+def _minutos(desde: str, ts: str) -> float | None:
+    try:
+        return (datetime.fromisoformat(str(ts)) - datetime.fromisoformat(str(desde))).total_seconds() / 60
+    except ValueError:
+        return None
+
+
+def actualizar_copia_memes(copia: MemeBroker, ultimos: dict, ts: str, grupo) -> None:
+    """Stop, trailing, rug y tiempo máximo de las copias, con los parámetros de la mesa de memes."""
+    with _CANDADO:
+        for m, pos in list(copia.positions.items()):
+            c = ultimos.get(m)
+            if c is None:          # sin precio esta vez (la API a veces no lo da): se espera a la siguiente
+                continue
+            t = copia.update(m, c.get("price"), c.get("liq"), ts, _minutos(pos["opened"], ts))
+            if t:
+                grupo.enviar("risk", f"🐋 Copia memes · {'🟢' if t['pnl'] > 0 else '🔴'} Cerrada {t['symbol']} por "
+                                     f"{t['reason']}: {t['pnl']:+.2f} $ ({t['pnl_pct']:+.0f}%) · capital ficticio "
+                                     f"{copia.equity():,.2f} $")
+        copia.to_json(copia.ruta)
+
+
+def copiar_memes(copia: MemeBroker, c: dict, x: dict, ts: str, grupo, p: dict) -> None:
+    """Una ballena compra -> la copia compra en papel con el tamaño y los límites de la mesa de memes."""
+    with _CANDADO:
+        copia.new_day(ts)
+        ok, porque = copia.can_open()
+        if not ok or not c.get("price"):
+            return
+        usd = copia.equity() * p["max_position_pct"] / 100
+        quien = x.get("alias") or str(x.get("wallet", ""))[:6]
+        motivo = (f"la ballena {quien} sube del {x.get('antes')} % al {x.get('despues')} %" if x["tipo"] == "compra"
+                  else f"la wallet seguida {quien} compra")
+        pos = copia.open(c, usd, ts, {"motivo": motivo})
+        if pos:
+            grupo.enviar("risk", f"🐋 Copia memes · 📥 Compro en papel ${c.get('symbol')} a {c['price']:.6g} · "
+                                 f"{usd:,.2f} $ ficticios · stop −{p['stop_pct']}%, trailing desde "
+                                 f"+{p['trail_start_pct']}%\nPor qué: {motivo}")
+        copia.to_json(copia.ruta)
+
+
 def _ballenas_seguro(eng, extra, r, ballenas, grupo, avisos) -> None:
     try:
         _pasada_ballenas(eng, extra, r, ballenas, grupo)
@@ -168,6 +233,10 @@ def _pasada_ballenas(eng, extra, r, ballenas, grupo) -> list[dict]:
     with open(os.path.join(r["grabacion"], f"ballenas_{ts[:10]}.jsonl"), "a", encoding="utf-8") as f:
         for x in eventos:
             f.write(json.dumps({"ts": ts, **x}) + "\n")
+    if getattr(eng, "copia", None):
+        for x in eventos:
+            if x["tipo"] in ("compra", "wallet_compra") and x.get("mint") in getattr(eng, "ultimos", {}):
+                copiar_memes(eng.copia, eng.ultimos[x["mint"]], x, ts, grupo, eng.p)
     abiertas = set(eng.broker.positions)
     importantes = [x for x in eventos if x["tipo"] in ("venta", "compra", "concentracion")
                    or x.get("mint") in abiertas or x.get("mint") in vigiladas]

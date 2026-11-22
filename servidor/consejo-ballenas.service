@@ -1,0 +1,15 @@
+[Unit]
+Description=El Consejo - ballenas (Binance BTC/ETH + COT) y su copia en papel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=consejo
+WorkingDirectory=/home/consejo/bot-trading
+Environment=PYTHONUTF8=1 PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 ballenas_vivo.py
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
