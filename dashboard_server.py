@@ -7,7 +7,8 @@ El panel solo LEE resultados en papel: no tiene botones que operen ni muestra cl
 
 El panel pide `data?mesa=cripto`, `data?mesa=mercados` o `data?mesa=memes` y este servidor le
 devuelve `salida/estado_<mesa>.json`. Con `&fuente=papel` (abre http://localhost:8000/?fuente=papel)
-devuelve el modo papel en vivo, `salida/estado_papel_<mesa>.json`. Si no existe, el panel enseña sus
+devuelve el modo papel en vivo, `salida/estado_papel_<mesa>.json`. Sin `fuente` también da el papel en
+vivo si existe; `&fuente=backtest` fuerza el backtest. El chip «En vivo / Backtest» del panel cambia entre los dos. Si no existe, el panel enseña sus
 datos de demostración.
 """
 
@@ -31,10 +32,15 @@ class Manejador(http.server.SimpleHTTPRequestHandler):
         if url.path.rstrip("/").endswith("/data") or url.path == "/data":
             q = urllib.parse.parse_qs(url.query)
             mesa = q.get("mesa", ["cripto"])[0]
-            if mesa not in ("cripto", "mercados", "memes"):
+            if mesa not in ("cripto", "mercados", "memes", "lab"):
                 return self.send_error(400, "mesa desconocida")
-            papel = q.get("fuente", [""])[0] == "papel"
-            ruta = os.path.join(RAIZ, "salida", f"estado_{'papel_' if papel else ''}{mesa}.json")
+            if mesa == "lab":                 # 🧪 laboratorio: solo existe en papel
+                mesa, q["fuente"] = "cripto_lab", ["papel"]
+            fuente = q.get("fuente", [""])[0]
+            ruta_papel = os.path.join(RAIZ, "salida", f"estado_papel_{mesa}.json")
+            # por defecto, el papel EN VIVO si existe (precios reales); ?fuente=backtest para el histórico
+            papel = fuente == "papel" or (fuente != "backtest" and os.path.exists(ruta_papel))
+            ruta = ruta_papel if papel else os.path.join(RAIZ, "salida", f"estado_{mesa}.json")
             if not os.path.exists(ruta):
                 return self.send_error(404, "Sin datos: corre antes python run_backtest.py")
             with open(ruta, "rb") as f:

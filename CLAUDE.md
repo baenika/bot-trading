@@ -33,6 +33,13 @@ Bot de trading multi-agente ("el Consejo") de David. Toda la documentación y lo
 - Análisis bajo pedido: `consejo/analisis.py` (alias como oro, btc, nasdaq); no opera, solo lee velas cerradas
 - Avisos de opción de compra: `papel.texto_opcion` (COMPRAR → 🟢, ESPERAR → 🟡); llegan aunque /avisos silencie los debates
 - Servidor 24/7 (Ubuntu + systemd): `servidor/instalar.sh` y `servidor/LEEME.md`. Solo un proceso lee comandos (el de cripto); la segunda mesa va con `--sin-mando`
+- 🧪 Laboratorio: `python papel.py --laboratorio --sin-mando` = misma config SIN el veto del Skeptic (muchas más operaciones), cartera aparte salida/papel_cripto_lab.json, pestaña «🧪 Lab» del panel
+- Panel: sin `?fuente` abre el papel en vivo si existe; `?fuente=backtest` para el histórico; el chip «En vivo/Backtest» cambia
+- Reiniciar carteras de papel: `python reiniciar_papel.py <cripto|mercados|lab|memes|copia|todo>` (archiva en salida/archivo/, no borra)
+- Llenados: órdenes límite y take profit solo se llenan si el precio PASA el nivel (tocarlo no basta)
+- Copia de ballenas en papel: `consejo/copia.py` (CarteraCopia, mismos costes y stops del backtest)
+- Memes anti volumen inflado: `min_txns_h1` y `max_ticket_medio_usd` en consejo/memes/desk.py
+- Entrada por confluencia: probada el 22-nov y descartada (sale peor que el retroceso en %)
 - Panel en el móvil (mismo wifi): `python dashboard_server.py --red`
 - Aprender/autoajuste semanal: `python aprender.py [--telegram]`. Regla de dos tramos (mitad antigua buscar, mitad reciente comprobar), un cambio como mucho, solo parámetros de RANGOS; lo aceptado va a salida/config_auto_<mesa>.json
 - Avisos al móvil: `consejo/avisos.py` (errores, datos que no llegan, paradas, versión nueva, autoajuste); máximo uno igual cada 6 h
