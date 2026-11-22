@@ -3,6 +3,7 @@
     py papel.py --mesa cripto              # se queda vigilando (mira cada 5 minutos)
     py papel.py --mesa mercados --una-vez  # una sola pasada (para el Programador de tareas)
     py papel.py --prueba-telegram          # cada bot saluda en el grupo
+    py papel.py --mesa mercados --sin-mando  # segunda mesa a la vez: avisa, pero no lee comandos
 
 - Precios: Binance (cripto) y Yahoo (mercados), públicos y sin cuenta.
 - Noticias: Hacker News (y GDELT si responde), las de las últimas 24 h, solo cuando el Scout da una alerta.
@@ -24,7 +25,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
-from consejo import backtest, datos, mesas, seguridad
+from consejo import analisis, backtest, datos, mesas, seguridad
 from consejo.agentes import news
 from consejo.mando import Mando
 from consejo.telegram import NOMBRES, Grupo
@@ -136,6 +137,27 @@ def mensajes_de_decision(m: backtest.Motor) -> list[tuple[str, str]]:
     return out
 
 
+def texto_opcion(u: dict, mesa: str) -> str:
+    """Aviso corto de «opción de compra» cuando el Consejo dice COMPRAR o ESPERAR un retroceso."""
+    nombre = analisis.nombre(u["symbol"])
+    sin_ventaja = "\n(Mesa de mercados: en el backtest no tiene ventaja; es para comprobar la configuración.)" \
+        if mesa == "mercados" else ""
+    if u.get("decision") == "COMPRAR":
+        return (f"🟢 OPCIÓN DE COMPRA · {nombre}\nEntrada {u['entry']:.6g} · stop {u['sl']:.6g} · objetivo "
+                f"{u['tp']:.6g} · puntos {u.get('score', 0):+.0f}\nEl papel entra solo; tú no tienes que hacer "
+                f"nada (dinero ficticio).{sin_ventaja}")
+    if u.get("decision") == "ESPERAR" and u.get("wait_price"):
+        return (f"🟡 POSIBLE COMPRA · {nombre}: el Consejo espera un retroceso a {u['wait_price']:.6g} "
+                f"(stop {u['sl']:.6g}, objetivo {u['tp']:.6g}). Si no baja, no entra.{sin_ventaja}")
+    return ""
+
+
+def bajar_velas(s: str, timeframe: str = "1h") -> list[datos.Vela]:
+    """Velas cerradas de cualquier activo de las dos mesas (para /analizar)."""
+    vs = velas_binance(s, timeframe) if s in mesas.CRIPTO else velas_yahoo(s, timeframe)
+    return solo_cerradas(vs, backtest._duracion(timeframe), datetime.now(timezone.utc))
+
+
 def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str, avisos=None) -> None:
     ahora = datetime.now(timezone.utc)
     dur = backtest._duracion(cfg["timeframe"])
@@ -182,6 +204,9 @@ def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str, avisos=None) ->
         antes_ops, antes_abiertas, antes_ultima = len(m.operaciones), set(m.abiertas), m.ultima
         m.paso(s, i, ultima_vela=True)
         if m.ultima is not antes_ultima and m.ultima and m.ultima.get("symbol") == s:
+            aviso = texto_opcion(m.ultima, mesa)
+            if aviso:
+                grupo.enviar("risk", aviso)          # llega aunque los debates estén en silencio
             grupo.conversacion(mensajes_de_decision(m))
         for p in [m.abiertas[x] for x in set(m.abiertas) - antes_abiertas]:
             grupo.enviar("risk", f"📥 Entrada {p['symbol']} a {p['entry']:.4g} · stop {p['stop']:.4g} · "
@@ -223,6 +248,8 @@ def main(argv=None) -> int:
     ap.add_argument("--cada", type=int, default=300, help="segundos entre pasadas")
     ap.add_argument("--telegram", default=os.path.join(RAIZ, "telegram.json"))
     ap.add_argument("--prueba-telegram", action="store_true")
+    ap.add_argument("--sin-mando", action="store_true",
+                    help="no leer comandos de Telegram (solo una copia del bot puede leerlos a la vez)")
     ap.add_argument("--puerto-panel", type=int, default=8000,
                     help="puerto del panel abierto con `dashboard_server.py --red` (0 = no dar enlace)")
     a = ap.parse_args(argv)
@@ -243,11 +270,22 @@ def main(argv=None) -> int:
     ruta = os.path.join(RAIZ, "salida", f"papel_{a.mesa}.json")
     import dashboard_server
     url_panel = f"http://{dashboard_server.ip_local()}:{a.puerto_panel}/?fuente=papel" if a.puerto_panel else ""
-    mando = Mando(grupo, cfg, ruta, url_panel=url_panel)       # /panel, /analizar, /cartera, /parametros, /avisos desde Telegram
+    def analista(texto: str) -> str:
+        estado = {}
+        if os.path.exists(ruta):
+            with open(ruta, encoding="utf-8") as f:
+                estado = json.load(f)
+        return analisis.analizar(texto, cfg, lambda s: bajar_velas(s, cfg["timeframe"]), estado)
+
+    # /panel, /analizar, /cartera, /parametros, /avisos, /vincular desde Telegram
+    mando = Mando(grupo, cfg, ruta, url_panel=url_panel, analista=analista)
+    if a.sin_mando:
+        mando.activo = False
     from consejo.avisos import Avisador
     avisos = Avisador(grupo, f"papel {a.mesa}")
-    if mando.activo and not a.una_vez:
-        grupo.enviar("risk", "🏛️ Consejo en marcha (papel). Escribe /panel para ver los botones.")
+    if grupo.activo("risk") and not a.una_vez:
+        grupo.enviar("risk", f"🏛️ Consejo {a.mesa} en marcha (papel)." +
+                     (" Escribe /panel para ver los botones." if mando.activo else ""))
         avisos.version()
         if auto:
             avisos.avisar("cambio", json.dumps(auto, sort_keys=True), f"Uso los ajustes aceptados por el autoajuste: {auto}")

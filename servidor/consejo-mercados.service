@@ -1,0 +1,15 @@
+[Unit]
+Description=El Consejo - mesa de mercados en papel (solo avisa; los comandos los lee la mesa cripto)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=consejo
+WorkingDirectory=/home/consejo/bot-trading
+Environment=PYTHONUTF8=1 PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 papel.py --mesa mercados --sin-mando --puerto-panel 0
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+[Unit]
+Description=De lunes a viernes a las 22:30 (hora de Madrid), despues del cierre de Wall Street
+
+[Timer]
+OnCalendar=Mon..Fri 22:30 Europe/Madrid
+Persistent=true
+
+[Install]
+WantedBy=timers.target

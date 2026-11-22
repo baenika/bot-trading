@@ -1,0 +1,15 @@
+[Unit]
+Description=El Consejo - mesa cripto en papel + mando de Telegram (dinero ficticio)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=consejo
+WorkingDirectory=/home/consejo/bot-trading
+Environment=PYTHONUTF8=1 PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 papel.py --mesa cripto --puerto-panel 0
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

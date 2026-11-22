@@ -1,0 +1,15 @@
+[Unit]
+Description=El Consejo - memecoins en papel y grabacion (DexScreener/RugCheck, solo lectura)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=consejo
+WorkingDirectory=/home/consejo/bot-trading
+Environment=PYTHONUTF8=1 PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 memes.py grabar
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=El Consejo - autoajuste semanal e informe al movil
+
+[Service]
+Type=oneshot
+User=consejo
+WorkingDirectory=/home/consejo/bot-trading
+Environment=PYTHONUTF8=1 PYTHONUNBUFFERED=1
+ExecStart=-/usr/bin/python3 descargar_datos.py cripto
+ExecStart=/usr/bin/python3 aprender.py --telegram
+ExecStart=/usr/bin/python3 informe_semanal.py --telegram
+# papel.py lee el autoajuste al arrancar: se reinicia para usarlo
+ExecStartPost=+/bin/systemctl try-restart consejo-cripto.service
