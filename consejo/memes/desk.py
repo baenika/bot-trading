@@ -18,6 +18,9 @@ DEFAULTS = {
     "stop_pct": 6, "trail_start_pct": 12, "trail_pct": 8, "max_hold_min": 360,
     "max_position_pct": 8, "risk_cap_pct": 1.0, "max_open": 4, "daily_loss_pct": 6,
     "max_drawdown_pct": 25, "fee_pct": 1.0, "max_impact_pct": 3.0,
+    # anti volumen falso (idea del filtro «global fees paid» de Axiom, reel del 22-nov): mucho volumen
+    # con pocas operaciones o con tickets enormes suele ser volumen inflado por el creador. 0 = apagado.
+    "min_txns_h1": 100, "max_ticket_medio_usd": 2500,
 }
 
 
@@ -78,6 +81,12 @@ class MemeDesk:
         if s.get("bundled_pct") is not None:
             kill(s["bundled_pct"] > p["max_bundled_pct"], f"lanzamiento coordinado > {p['max_bundled_pct']}%")
         kill(bool(s.get("rugged")), "marcado como rug")
+        n1 = (c.get("buys_h1") or 0) + (c.get("sells_h1") or 0)
+        if p["min_txns_h1"] and c.get("buys_h1") is not None:
+            kill(n1 < p["min_txns_h1"], f"solo {n1} operaciones en 1h (volumen poco real)")
+        if p["max_ticket_medio_usd"] and n1 and c.get("vol_h1"):
+            kill(c["vol_h1"] / n1 > p["max_ticket_medio_usd"],
+                 f"ticket medio {c['vol_h1'] / n1:,.0f} $ en 1h (volumen inflado)")
         kill((c.get("chg_h1") or 0) > p["max_chg_h1_already"], f"ya +{p['max_chg_h1_already']}% en 1h")
         if check_safety and p["require_safety_data"] and rv.unknown:
             rv.kills.append("faltan datos de seguridad")
