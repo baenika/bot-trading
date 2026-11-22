@@ -115,3 +115,27 @@ def test_decodificar_dukascopy_elige_la_escala():
                         format=lzma.FORMAT_ALONE)
     f = cli._decodificar(raw, datetime(2025, 1, 1, tzinfo=timezone.utc), (250, 10000))[0]
     assert f[1] == 2650.0 and f[2] == 2652.0 and f[3] == 2649.0 and f[4] == 2651.0
+
+
+def test_papel_fabrica_congela_estrategias_y_avisa(tmp_path, monkeypatch):
+    import json
+    import papel_fabrica
+    monkeypatch.setattr(papel_fabrica, "SALIDA", str(tmp_path))
+    e = {"cond": [["donchian", {"n": 20}]], "dir": "ambas", "atr_n": 20, "sl": 2.0, "tp": None, "barras": 10,
+         "canal": None, "intradia": False}
+    fin = {"reglas": "x", "estrategia": e, "familia": "ruptura", "is": {"ret_pct": 1}, "oos": {"ret_pct": 1},
+           "todo": {"dd_pct": 1}, "fondeo": {"pct_aprobadas": 50}}
+    (tmp_path / "fabrica_oro.json").write_text(json.dumps({"finalistas": [fin, fin, fin]}), encoding="utf-8")
+    velas = datos.sinteticas("GC=F", n=3000, inicio=2000, semilla=9)
+    est = papel_fabrica.estrategias("oro", 2)
+    assert len(est) == 2 and (tmp_path / "papel_fabrica_oro_estrategias.json").exists()
+    # el papel empieza a mitad de las velas: solo cuentan las operaciones posteriores
+    est[0]["inicio"] = est[1]["inicio"] = velas[1500].t.isoformat()
+    (tmp_path / "papel_fabrica_oro_estrategias.json").write_text(json.dumps(est), encoding="utf-8")
+    avisos = []
+    r = papel_fabrica.pasada("oro", 2, avisos.append, velas=velas)
+    assert len(r["cuentas"]) == 2 and avisos
+    assert all(c["opened"] >= velas[1500].t.isoformat() for c in r["cuentas"][0]["cerradas"])
+    n = len(avisos)
+    papel_fabrica.pasada("oro", 2, avisos.append, velas=velas)   # misma pasada: nada nuevo que avisar
+    assert len(avisos) == n

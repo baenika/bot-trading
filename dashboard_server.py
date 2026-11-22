@@ -71,6 +71,7 @@ class Manejador(http.server.SimpleHTTPRequestHandler):
                 if os.path.isdir(carpeta) else []
             enlaces = "".join(f"<li><a href='/fabrica/{h}'>{h}</a></li>" for h in hay) or \
                 "<li>Todavía no hay informes: corre <code>py fabrica.py oro</code></li>"
+            enlaces += "</ul>" + _papel_fabrica(carpeta) + "<ul>"
             cuerpo = ("<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
                       "<title>Fábrica de estrategias</title><body style='font:16px system-ui;margin:24px;"
                       "background:#f6f7f9;color:#15181d'><h1>🏭 Fábrica de estrategias</h1><ul>"
@@ -80,6 +81,33 @@ class Manejador(http.server.SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(cuerpo)
+
+
+def _papel_fabrica(carpeta: str) -> str:
+    """Las estrategias de la fábrica que operan en papel (papel_fabrica.py), con dinero ficticio."""
+    import glob
+    import html
+    trozos = []
+    for ruta in sorted(glob.glob(os.path.join(carpeta, "papel_fabrica_*.json"))):
+        if ruta.endswith("_estrategias.json"):
+            continue
+        try:
+            with open(ruta, encoding="utf-8") as f:
+                e = json.load(f)
+        except (OSError, ValueError):
+            continue
+        filas = []
+        for c in e.get("cuentas", []):
+            ab = c.get("abierta")
+            gan = c["con_abierta"] - 100000
+            pos = (f"abierta {'compra' if ab['dir'] == 'long' else 'venta'} desde {ab['entry']} "
+                   f"({ab['pnl']:+.0f} $)") if ab else "sin posición"
+            filas.append(f"<li><b>#{c['n']}</b> {gan:+,.0f} $ · {len(c['cerradas'])} cerradas · {pos}<br>"
+                         f"<small>{html.escape(c['reglas'])}<br>{html.escape(c['reto'])}</small></li>")
+        trozos.append(f"<h2>📝 En papel: {html.escape(e.get('activo', ''))} (precio {e.get('precio', 0):,.2f}, "
+                      f"última vela {str(e.get('ultima_vela', ''))[:16]} UTC)</h2><ul>{''.join(filas)}</ul>")
+    return "".join(trozos) + ("<p><small>Dinero ficticio: cuentas simuladas de 100.000 $ con riesgo del 1 %.</small></p>"
+                              if trozos else "")
 
 
 def ip_local() -> str:
