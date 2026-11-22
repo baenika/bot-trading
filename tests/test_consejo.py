@@ -853,3 +853,67 @@ def test_memes_descarta_volumen_inflado():
     assert any("operaciones en 1h" in k for k in pocas) and any("ticket medio" in k for k in pocas)
     assert not MemeDesk({"min_txns_h1": 0, "max_ticket_medio_usd": 0}).onchain(
         {**base, "buys_h1": 30, "sells_h1": 20}, None).kills
+
+
+def test_cartera_copia_de_ballenas_con_costes_del_backtest(tmp_path):
+    from consejo.copia import CarteraCopia
+    cfg = {**backtest.CONFIG_DEFECTO, "capital_inicial": 10000.0}
+    c = CarteraCopia(str(tmp_path / "copia.json"), cfg)
+    p = c.abrir("BTCUSDT", 100.0, 2.0, "t0", "ballenas compran 3 M$")
+    assert p and p["stop"] < 100 < p["entry"] < p["tp"] and p["usd"] <= 10000 * 0.33 + 1
+    assert c.abrir("BTCUSDT", 100.0, 2.0, "t0", "otra") is None          # no dobla
+    assert c.actualizar("BTCUSDT", p["tp"], 99.0, 100.0, "t1") is None    # tocar el objetivo no basta
+    op = c.actualizar("BTCUSDT", p["tp"] + 0.01, 99.0, 104.0, "t2")
+    assert op["reason"] == "take profit" and op["pnl"] > 0 and 1.5 < op["R"] < 2.0   # comisiones restan
+    c.guardar()
+    assert CarteraCopia(str(tmp_path / "copia.json"), cfg).d["operaciones"][0]["pnl"] == op["pnl"]
+    p2 = c.abrir("ETHUSDT", 50.0, 1.0, "t3", "x")
+    assert c.actualizar("ETHUSDT", 50.5, p2["stop"], 50.0, "t4")["reason"] == "stop loss"
+    assert "cerradas" in c.resumen("Copia")
+
+
+def test_panel_abre_el_papel_en_vivo_por_defecto(tmp_path, monkeypatch):
+    import dashboard_server as ds
+    sal = tmp_path / "salida"
+    sal.mkdir()
+    (sal / "estado_cripto.json").write_text('{"source": "backtest"}')
+    monkeypatch.setattr(ds, "RAIZ", str(tmp_path))
+
+    def pedir(path):
+        h = ds.Manejador.__new__(ds.Manejador)
+        h.path, salida = path, {}
+        h.send_response = lambda c: salida.setdefault("code", c)
+        h.send_header = lambda *a: None
+        h.end_headers = lambda: None
+        h.send_error = lambda c, m="": salida.setdefault("code", c)
+        h.wfile = type("W", (), {"write": lambda self, b: salida.setdefault("body", b)})()
+        ds.Manejador.do_GET(h)
+        return salida
+    assert b"backtest" in pedir("/data?mesa=cripto")["body"]
+    (sal / "estado_papel_cripto.json").write_text('{"source": "live"}')
+    assert b"live" in pedir("/data?mesa=cripto")["body"]
+    assert b"backtest" in pedir("/data?mesa=cripto&fuente=backtest")["body"]
+    assert pedir("/data?mesa=lab")["code"] == 404
+    (sal / "estado_papel_cripto_lab.json").write_text('{"source": "live", "desk": "lab"}')
+    assert b"lab" in pedir("/data?mesa=lab")["body"]
+
+
+def test_llenado_limite_necesita_pasar_el_nivel():
+    from consejo.agentes.charts import Plan
+    vs = datos.sinteticas("BTCUSDT", 400, 30000, semilla=2)
+    m = backtest.Motor({"BTCUSDT": vs})
+    v = vs[300]
+    plan = Plan("long", v.c, v.l - 500, v.c + 1000, v.l, 2.0, 2.0, None)
+    m.pendientes["BTCUSDT"] = {"tipo": "retroceso", "plan": plan, "i": 299, "t_i": "", "ficha": {}}
+    m._pendiente("BTCUSDT", 300)                     # el mínimo de la vela toca justo el precio: no se llena
+    assert "BTCUSDT" not in m.abiertas
+
+
+def test_reiniciar_papel_archiva_sin_borrar(tmp_path):
+    import reiniciar_papel as rp
+    (tmp_path / "papel_cripto.json").write_text("{}")
+    (tmp_path / "copia_btc.json").write_text("{}")
+    assert rp.reiniciar("cripto", str(tmp_path)) == ["papel_cripto.json"]
+    assert not (tmp_path / "papel_cripto.json").exists()
+    assert list((tmp_path / "archivo").glob("*/papel_cripto.json"))
+    assert rp.reiniciar("copia", str(tmp_path)) == ["copia_btc.json"]

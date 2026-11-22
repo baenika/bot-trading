@@ -252,14 +252,14 @@ class Motor:
         if p["dir"] == "long":
             if v.l <= p["stop"]:
                 self._cerrar(s, min(v.o, p["stop"]) * (1 - desl), "stop loss", v.t)
-            elif v.h >= p["tp"]:
+            elif v.h > p["tp"] or v.o >= p["tp"]:     # el take profit (límite) necesita que el precio lo pase
                 self._cerrar(s, max(v.o, p["tp"]) if v.o > p["tp"] else p["tp"], "take profit", v.t)
             elif i - p["i"] >= self.cfg["max_barras"]:
                 self._cerrar(s, v.c * (1 - desl), "tiempo máximo", v.t)
         else:
             if v.h >= p["stop"]:
                 self._cerrar(s, max(v.o, p["stop"]) * (1 + desl), "stop loss", v.t)
-            elif v.l <= p["tp"]:
+            elif v.l < p["tp"] or v.o <= p["tp"]:
                 self._cerrar(s, min(v.o, p["tp"]) if v.o < p["tp"] else p["tp"], "take profit", v.t)
             elif i - p["i"] >= self.cfg["max_barras"]:
                 self._cerrar(s, v.c * (1 + desl), "tiempo máximo", v.t)
@@ -276,7 +276,8 @@ class Motor:
             self._abrir(s, i, o["plan"].dir, precio, o["plan"], "mercado", v.t, o.get("ficha"))
         else:  # retroceso: orden límite al precio de espera
             plan = o["plan"]
-            toca = v.l <= plan.precio_espera if plan.dir == "long" else v.h >= plan.precio_espera
+            # una orden límite solo se llena si el precio PASA el nivel (tocarlo justo no garantiza el llenado)
+            toca = v.l < plan.precio_espera if plan.dir == "long" else v.h > plan.precio_espera
             if toca:
                 del self.pendientes[s]
                 self._abrir(s, i, plan.dir, plan.precio_espera, plan, "retroceso", v.t, o.get("ficha"))

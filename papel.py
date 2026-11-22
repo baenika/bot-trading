@@ -4,6 +4,8 @@
     py papel.py --mesa mercados --una-vez  # una sola pasada (para el Programador de tareas)
     py papel.py --prueba-telegram          # cada bot saluda en el grupo
     py papel.py --mesa mercados --sin-mando  # segunda mesa a la vez: avisa, pero no lee comandos
+    py papel.py --laboratorio --sin-mando    # 🧪 laboratorio: la misma configuración SIN el veto del Skeptic,
+                                             #    para ver muchas más operaciones (cartera de papel aparte)
 
 - Precios: Binance (cripto) y Yahoo (mercados), públicos y sin cuenta.
 - Noticias: Hacker News (y GDELT si responde), las de las últimas 24 h, solo cuando el Scout da una alerta.
@@ -152,13 +154,29 @@ def texto_opcion(u: dict, mesa: str) -> str:
     return ""
 
 
+def explicar_entrada(p: dict) -> str:
+    """Por qué entró, con lo que vio el Consejo (la ficha), para que se entienda cada operación."""
+    f = p.get("ficha") or {}
+    if not f:
+        return ""
+    lin = [f"\nPor qué: señal «{f.get('setup', '?')}», decisión {f.get('decision', '?')} con "
+           f"{f.get('score', 0):+.0f} puntos, R:R {f.get('rr', 0)}."]
+    if f.get("pros"):
+        lin.append("➕ " + " · ".join(str(x) for x in f["pros"][:3]))
+    if f.get("cons"):
+        lin.append("➖ " + " · ".join(str(x) for x in f["cons"][:3]))
+    if f.get("p_tp_sim") is not None:
+        lin.append(f"⏳ Máquina del tiempo: objetivo primero en el {f['p_tp_sim']:.0f}% de los futuros.")
+    return "\n".join(lin)
+
+
 def bajar_velas(s: str, timeframe: str = "1h") -> list[datos.Vela]:
     """Velas cerradas de cualquier activo de las dos mesas (para /analizar)."""
     vs = velas_binance(s, timeframe) if s in mesas.CRIPTO else velas_yahoo(s, timeframe)
     return solo_cerradas(vs, backtest._duracion(timeframe), datetime.now(timezone.utc))
 
 
-def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str, avisos=None) -> None:
+def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str, avisos=None, lab: bool = False) -> None:
     ahora = datetime.now(timezone.utc)
     dur = backtest._duracion(cfg["timeframe"])
     lista = mesas.CRIPTO if mesa == "cripto" else mesas.MERCADOS
@@ -181,7 +199,8 @@ def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str, avisos=None) ->
             avisos.avisar("datos", f"{s}:viejas", f"Las últimas velas de {s} son de {vs[-1].t:%d/%m %H:%M} UTC: "
                                                   "los datos llegan con retraso.")
 
-    m = backtest.Motor(series, cfg, noticias=NoticiasEnVivo(ahora))
+    m = backtest.Motor(series, cfg, con_skeptic=not lab, noticias=NoticiasEnVivo(ahora))
+    pre = "🧪 Laboratorio · " if lab else ""
     estado = {}
     if os.path.exists(ruta_estado):
         with open(ruta_estado, encoding="utf-8") as f:
@@ -203,16 +222,16 @@ def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str, avisos=None) ->
     for t, s, i in sorted(eventos):
         antes_ops, antes_abiertas, antes_ultima = len(m.operaciones), set(m.abiertas), m.ultima
         m.paso(s, i, ultima_vela=True)
-        if m.ultima is not antes_ultima and m.ultima and m.ultima.get("symbol") == s:
+        if not lab and m.ultima is not antes_ultima and m.ultima and m.ultima.get("symbol") == s:
             aviso = texto_opcion(m.ultima, mesa)
             if aviso:
                 grupo.enviar("risk", aviso)          # llega aunque los debates estén en silencio
             grupo.conversacion(mensajes_de_decision(m))
         for p in [m.abiertas[x] for x in set(m.abiertas) - antes_abiertas]:
-            grupo.enviar("risk", f"📥 Entrada {p['symbol']} a {p['entry']:.4g} · stop {p['stop']:.4g} · "
-                                 f"objetivo {p['tp']:.4g} (dinero ficticio)")
+            grupo.enviar("risk", f"{pre}📥 Entrada {p['symbol']} a {p['entry']:.4g} · stop {p['stop']:.4g} · "
+                                 f"objetivo {p['tp']:.4g} (dinero ficticio)" + explicar_entrada(p))
         for o in m.operaciones[antes_ops:]:
-            grupo.enviar("risk", f"{'🟢' if o['pnl'] > 0 else '🔴'} Cerrado {o['symbol']} por {o['reason']}: "
+            grupo.enviar("risk", f"{pre}{'🟢' if o['pnl'] > 0 else '🔴'} Cerrado {o['symbol']} por {o['reason']}: "
                                  f"{o['pnl']:+.2f} ({o['R']:+.2f}R) · capital ficticio {m.capital:,.2f}")
         punto = (backtest._fmt(t), round(m.capital, 2))
         if m.curva and m.curva[-1][0] == punto[0]:
@@ -228,14 +247,15 @@ def pasada(mesa: str, cfg: dict, grupo: Grupo, ruta_estado: str, avisos=None) ->
     with open(ruta_estado, "w", encoding="utf-8") as f:
         json.dump({**m.exportar(), "inicio": inicio}, f, ensure_ascii=False, default=str)
     panel = backtest.estado_panel(m, series, "live", f"papel desde {inicio[:16].replace('T', ' ')}")
-    panel["desk"] = mesa
+    panel["desk"] = "lab" if lab else mesa
     # comprar y mantener desde que arrancó el papel, no desde el principio de las velas bajadas
     t0 = datetime.fromisoformat(inicio)
     desde = {k: [v for v in vs if v.t >= t0] for k, vs in series.items()}
     bh = backtest._comprar_y_mantener({k: v for k, v in desde.items() if len(v) > 1})
     panel["skeptic_saved"]["buy_hold_pct"] = bh
     panel["exam"] = backtest.examen(m.estadisticas(), bh)
-    with open(os.path.join(RAIZ, "salida", f"estado_papel_{mesa}.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(RAIZ, "salida", f"estado_papel_{mesa}{'_lab' if lab else ''}.json"), "w",
+              encoding="utf-8") as f:
         json.dump(panel, f, ensure_ascii=False, default=str)
     print(f"{ahora:%H:%M} · {len(eventos)} velas nuevas · capital ficticio {m.capital:,.2f} · "
           f"{len(m.abiertas)} abiertas")
@@ -250,6 +270,8 @@ def main(argv=None) -> int:
     ap.add_argument("--prueba-telegram", action="store_true")
     ap.add_argument("--sin-mando", action="store_true",
                     help="no leer comandos de Telegram (solo una copia del bot puede leerlos a la vez)")
+    ap.add_argument("--laboratorio", action="store_true",
+                    help="cartera aparte SIN el veto del Skeptic: muchas más operaciones para ver cómo actúa")
     ap.add_argument("--puerto-panel", type=int, default=8000,
                     help="puerto del panel abierto con `dashboard_server.py --red` (0 = no dar enlace)")
     a = ap.parse_args(argv)
@@ -267,7 +289,7 @@ def main(argv=None) -> int:
             grupo.enviar(bot, f"{nombre} listo. Modo papel: dinero ficticio, sin órdenes reales.")
         return 0
 
-    ruta = os.path.join(RAIZ, "salida", f"papel_{a.mesa}.json")
+    ruta = os.path.join(RAIZ, "salida", f"papel_{a.mesa}{'_lab' if a.laboratorio else ''}.json")
     import dashboard_server
     url_panel = f"http://{dashboard_server.ip_local()}:{a.puerto_panel}/?fuente=papel" if a.puerto_panel else ""
     def analista(texto: str) -> str:
@@ -282,16 +304,17 @@ def main(argv=None) -> int:
     if a.sin_mando:
         mando.activo = False
     from consejo.avisos import Avisador
-    avisos = Avisador(grupo, f"papel {a.mesa}")
+    avisos = Avisador(grupo, f"papel {a.mesa}{' laboratorio' if a.laboratorio else ''}")
     if grupo.activo("risk") and not a.una_vez:
-        grupo.enviar("risk", f"🏛️ Consejo {a.mesa} en marcha (papel)." +
+        grupo.enviar("risk", (f"🧪 Laboratorio {a.mesa} en marcha (papel, sin el veto del Skeptic)."
+                              if a.laboratorio else f"🏛️ Consejo {a.mesa} en marcha (papel).") +
                      (" Escribe /panel para ver los botones." if mando.activo else ""))
         avisos.version()
         if auto:
             avisos.avisar("cambio", json.dumps(auto, sort_keys=True), f"Uso los ajustes aceptados por el autoajuste: {auto}")
     while True:
         try:
-            pasada(a.mesa, cfg, grupo, ruta, avisos)
+            pasada(a.mesa, cfg, grupo, ruta, avisos, lab=a.laboratorio)
         except Exception as e:  # noqa: BLE001 - un fallo no tumba el bot: avisa y lo reintenta
             print(f"Error en la pasada: {e!r}")
             avisos.error(e, "la pasada del Consejo")

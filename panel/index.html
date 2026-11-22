@@ -140,8 +140,8 @@
         <a href="#riesgo">Riesgo</a><a href="#ops">Operaciones</a>
       </nav>
       <div class="right">
-        <nav class="pills desk" id="deskNav"><a href="#cripto" data-d="cripto">Cripto</a><a href="#mercados" data-d="mercados">📊 Mercados</a><a href="#memes" data-d="memes">🪙 Memes</a></nav>
-        <span class="chip" id="srcChip"><span class="dot" id="srcDot"></span><span id="srcTxt">—</span></span>
+        <nav class="pills desk" id="deskNav"><a href="#cripto" data-d="cripto">Cripto</a><a href="#mercados" data-d="mercados">📊 Mercados</a><a href="#memes" data-d="memes">🪙 Memes</a><a href="#lab" data-d="lab">🧪 Lab</a></nav>
+        <span class="chip" id="srcChip" title="Cambiar entre papel en vivo y backtest" style="cursor:pointer" onclick="cambiarFuente()"><span class="dot" id="srcDot"></span><span id="srcTxt">—</span> ⇄</span>
         <span class="chip hide-m" id="modeChip">PAPER</span>
         <div class="avatar">DB</div>
       </div>
@@ -523,18 +523,24 @@ let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() 
 
 async function load(){
   const src = new URLSearchParams(location.search).get("fuente") || "";
-  const mesa = location.hash === "#memes" ? "memes" : location.hash === "#mercados" ? "mercados" : "cripto";
+  const mesa = location.hash === "#memes" ? "memes" : location.hash === "#mercados" ? "mercados" : location.hash === "#lab" ? "lab" : "cripto";
   try {
     const r = await fetch("data?mesa=" + mesa + (src ? "&fuente=" + encodeURIComponent(src) : ""), {cache:"no-store"});
     if (!r.ok) throw 0;
     isDemo = false; render(await r.json());
   } catch (e) {
+    if (mesa === "lab"){ isDemo = true; DATA = null; $("subline").textContent = "🧪 Laboratorio: todavía no ha hecho su primera pasada (py papel.py --laboratorio --sin-mando)"; return; }
     if (mesa === "mercados"){ isDemo = true; DATA = null; $("subline").textContent = "Mesa Mercados: todavía sin datos. Corre python descargar_datos.py mercados y luego python run_backtest.py --mesa mercados"; return; }
     if (typeof DEMO !== "undefined"){ isDemo = true; render(mesa === "memes" && typeof DEMO_MEMES !== "undefined" ? DEMO_MEMES : DEMO); }
     else $("subline").textContent = "No encuentro datos. Arranca el panel con: python dashboard_server.py";
   }
 }
-addEventListener("hashchange", () => { if (["#memes", "#cripto", "#mercados"].includes(location.hash)) load(); });
+addEventListener("hashchange", () => { if (["#memes", "#cripto", "#mercados", "#lab"].includes(location.hash)) load(); });
+function cambiarFuente(){
+  const u = new URL(location.href);
+  u.searchParams.set("fuente", DATA && DATA.source === "live" ? "backtest" : "papel");
+  location.href = u.toString();
+}
 load(); setInterval(() => { if (!isDemo && DATA && DATA.source === "live") load(); }, 20000);
 </script>
 </body>
