@@ -718,11 +718,13 @@ def test_ballenas_venta_compra_concentracion_y_wallets(tmp_path):
     assert [x["tipo"] for x in ev] == []          # 35 % sin la pool: no concentrado; primera vez sin avisar
     est["top"] = {"A": 100.0, "B": 450.0, "POOL": 400.0}
     est["firmas"] = ["s2", "s1"]
-    ev = b.pasada({"M1": "PEPE"}, excluir={"dueno_POOL"}, ahora=2000.0)
+    ev = b.pasada({"M1": "PEPE"}, excluir={"dueno_POOL"}, ahora=2000.0, mercado={"M1": {"mcap": 1_000_000}})
     tipos = sorted(x["tipo"] for x in ev)
     assert tipos == ["compra", "concentracion", "venta", "wallet_compra"]
     venta = next(x for x in ev if x["tipo"] == "venta")
     assert venta["antes"] == 30.0 and venta["despues"] == 10.0 and "rug" in texto(venta, {})
+    compra = next(x for x in ev if x["tipo"] == "compra")
+    assert compra["usd_mov"] == 400_000 and "Es ballena porque" in texto(compra, {}) and "400k $" in texto(compra, {})
     assert next(x for x in ev if x["tipo"] == "wallet_compra")["cantidad"] == 500
     assert b.d["wallets"]["dueno_B"]["manual"] is False      # la ballena que compró se sigue sola
     assert b.pasada({"M1": "PEPE"}, ahora=2100.0) == []       # respeta los 5 minutos
@@ -730,6 +732,22 @@ def test_ballenas_venta_compra_concentracion_y_wallets(tmp_path):
     assert "W1" in b2.d["wallets"] and b2.d["monedas"]["M1"]["concentrada"]
     b2.pasada({}, ahora=2000.0 + 8 * 86400, forzar=True)
     assert "dueno_B" not in b2.d["wallets"] and "W1" in b2.d["wallets"]   # la automática caduca a los 7 días
+
+
+def test_ballenas_sin_dinero_no_son_ballenas(tmp_path):
+    """Subir un 40 % del suministro de una moneda de 20k $ de market cap son 8k $: no es ballena."""
+    from consejo.memes.ballenas import Ballenas
+    est = {"top": {"A": 300.0, "B": 50.0}, "firmas": []}
+    b = Ballenas(str(tmp_path / "b.json"), rpc=_rpc_falso(est))
+    b.pasada({"M1": "PEPE"}, ahora=1000.0)
+    est["top"] = {"A": 300.0, "B": 450.0}
+    ev = b.pasada({"M1": "PEPE"}, ahora=2000.0, mercado={"M1": {"mcap": 20_000}})
+    mov = [x for x in ev if x["tipo"] == "movimiento"]
+    assert mov and mov[0]["lado"] == "compra" and mov[0]["usd_mov"] == 8_000
+    assert "dueno_B" not in b.d["wallets"]                       # no se sigue
+    est["top"] = {"A": 300.0, "B": 850.0}
+    ev = b.pasada({"M1": "PEPE"}, ahora=3000.0)                 # sin market cap: tampoco avisa
+    assert [x["tipo"] for x in ev if x["tipo"] in ("compra", "venta")] == []
 
 
 def test_memes_ballena_cli(tmp_path, monkeypatch, capsys):
@@ -779,7 +797,7 @@ def test_ballenas_con_rugcheck_quita_pools(monkeypatch, tmp_path):
     b = Ballenas(str(tmp_path / "b.json"), rpc=None, fuente_poseedores=sources.RugCheck().poseedores)
     b.pasada({"M": "X"}, ahora=1.0, forzar=True)
     informe["topHolders"][3]["pct"] = 2
-    ev = b.pasada({"M": "X"}, ahora=1000.0)
+    ev = b.pasada({"M": "X"}, ahora=1000.0, mercado={"M": {"mcap": 5_000_000}})
     assert [x["tipo"] for x in ev] == ["venta"]
 
 
