@@ -65,6 +65,29 @@ def _num(x: float) -> str:
     return f"{x:,.2f}" if x >= 100 else f"{x:.4g}"
 
 
+def niveles(velas) -> str:
+    """Máximo y mínimo de ayer, de la semana pasada y de 52 semanas (vídeo de Claude + TradingView)."""
+    from datetime import timedelta
+    v = velas[-1]
+    hoy = v.t.date()
+    ayer = [x for x in velas if x.t.date() == hoy - timedelta(days=1)]
+    if not ayer:  # lunes o festivo: el último día con velas antes de hoy
+        previas = [x for x in velas if x.t.date() < hoy]
+        ayer = [x for x in previas if previas and x.t.date() == previas[-1].t.date()]
+    lunes = hoy - timedelta(days=hoy.weekday())
+    semana = [x for x in velas if lunes - timedelta(days=7) <= x.t.date() < lunes]
+    anio = [x for x in velas if x.t.date() > hoy - timedelta(days=364)]
+    dias = (hoy - velas[0].t.date()).days
+    partes = []
+    if ayer:
+        partes.append(f"ayer {_num(min(x.l for x in ayer))} – {_num(max(x.h for x in ayer))}")
+    if semana:
+        partes.append(f"semana pasada {_num(min(x.l for x in semana))} – {_num(max(x.h for x in semana))}")
+    alto = max(x.h for x in anio)
+    partes.append(f"máximo de 52 semanas {_num(alto)}" if dias >= 360 else f"máximo de {dias} días {_num(alto)}")
+    return "📏 Niveles: " + " · ".join(partes)
+
+
 def ficha(s: str, velas, cfg: dict, estado: dict | None = None, caminos: int = 3000) -> str:
     """El análisis de un activo con sus velas cerradas (de más antigua a más reciente)."""
     if len(velas) < 210:
@@ -88,7 +111,8 @@ def ficha(s: str, velas, cfg: dict, estado: dict | None = None, caminos: int = 3
     lin = [f"📊 {nombre(s)} ({s})",
            f"Precio {_num(v.c)} · vela de las {v.t:%d/%m %H:%M} UTC · {cambio:+.2f}% en 24 velas",
            f"Tendencia: {tend}",
-           f"RSI {r:.0f} ({rsi_txt}) · ATR {atr_pct:.2f}% · rango de 20 velas {_num(bajo)} – {_num(alto)}"]
+           f"RSI {r:.0f} ({rsi_txt}) · ATR {atr_pct:.2f}% · rango de 20 velas {_num(bajo)} – {_num(alto)}",
+           niveles(velas)]
 
     alerta = scout.escanear(ctx, i, cfg)
     if alerta is None:

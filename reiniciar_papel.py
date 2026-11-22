@@ -1,6 +1,6 @@
 """Pone a cero una cartera de PAPEL (dinero ficticio) sin perder su historia.
 
-    py reiniciar_papel.py cripto        # también: mercados, lab, memes, copia
+    py reiniciar_papel.py cripto        # también: mercados, lab, memes, copia, fabrica
     py reiniciar_papel.py todo
 
 No borra nada: mueve los archivos a salida/archivo/<fecha>/ para poder compararlos después.
@@ -22,6 +22,7 @@ ARCHIVOS = {
     "lab": ["papel_cripto_lab.json", "estado_papel_cripto_lab.json"],
     "memes": ["papel_memes.json", "estado_papel_memes.json"],
     "copia": ["copia_*.json"],
+    "fabrica": ["papel_fabrica_*.json"],   # también las estrategias congeladas: la próxima vez elige de nuevo
 }
 
 

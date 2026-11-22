@@ -537,10 +537,23 @@ def _comprar_y_mantener(series: dict) -> float:
     return sum(rs) / len(rs) if rs else 0.0
 
 
-def examen(st: dict, comprar_y_mantener: float) -> list[dict]:
-    """Los criterios de David antes de plantearse siquiera el dinero real (del Consejo v5).
+def examen(st: dict, comprar_y_mantener: float, operaciones: list[dict] | None = None,
+           capital: float | None = None) -> list[dict]:
+    """Los criterios de David antes de plantearse siquiera el dinero real (del Consejo v5), más el examen
+    de cuenta fondeada (reglas tipo FTMO, consejo/fondeo.py) si se pasan las operaciones.
     Sin ninguna operación cerrada no hay nada que juzgar: las casillas salen «sin datos» (ok None)."""
     sin = not st["trades"]
+    extra = []
+    if operaciones is not None and capital:
+        from . import fondeo
+        f = fondeo.examen(operaciones, capital)
+        extra.append({"criterio": "pasa el reto de cuenta fondeada en la mitad de los intentos o más",
+                      "ok": None if sin or not f.get("intentos") else f["pct_aprobadas"] >= 50,
+                      "valor": f["texto"]})
+    return _examen_base(st, comprar_y_mantener, sin) + extra
+
+
+def _examen_base(st: dict, comprar_y_mantener: float, sin: bool) -> list[dict]:
     return [
         {"criterio": "100 operaciones o más", "ok": st["trades"] >= 100, "valor": st["trades"]},
         {"criterio": "profit factor mayor de 1,3", "ok": None if sin else st["profit_factor"] > 1.3,
@@ -622,7 +635,7 @@ def estado_panel(m: "Motor", series: dict, fuente: str, periodo: str | None, sin
         "score_counts": {str(k): v for k, v in sorted(m.puntos.items())},
         "calibration_kronos": m.calibracion_kronos.resumen(m.cfg["calibracion_max_error"], m.cfg["calibracion_min_casos"])
         if m.kronos is not None else None,
-        "exam": examen(st, _comprar_y_mantener(series)),
+        "exam": examen(st, _comprar_y_mantener(series), m.operaciones, m.cfg["capital_inicial"]),
         "calibration": m.calibracion.resumen(m.cfg["calibracion_max_error"], m.cfg["calibracion_min_casos"]),
         "news_coverage": {s: len(a.titulares) for s, a in (noticias or {}).items()},
         "skeptic_saved": {
