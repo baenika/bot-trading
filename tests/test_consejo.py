@@ -853,3 +853,24 @@ def test_memes_descarta_volumen_inflado():
     assert any("operaciones en 1h" in k for k in pocas) and any("ticket medio" in k for k in pocas)
     assert not MemeDesk({"min_txns_h1": 0, "max_ticket_medio_usd": 0}).onchain(
         {**base, "buys_h1": 30, "sells_h1": 20}, None).kills
+
+
+def test_entrada_por_confluencia_dentro_del_plan():
+    from consejo.agentes import charts, scout
+    from consejo.indicadores import Contexto
+    series = datos.sinteticas("BTCUSDT", 3000, 30000, semilla=1)
+    ctx = Contexto("BTCUSDT", series)
+    cfg = {**backtest.CONFIG_DEFECTO}
+    hechas = 0
+    for i in range(200, 3000):
+        a = scout.escanear(ctx, i, cfg)
+        if not a or a.dir != "long":
+            continue
+        base = charts.planificar(ctx, a, cfg)
+        conf = charts.planificar(ctx, a, {**cfg, "retroceso_modo": "confluencia"})
+        assert (base.entrada, base.stop, base.objetivo) == (conf.entrada, conf.stop, conf.objetivo)
+        assert base.stop < conf.precio_espera <= conf.entrada
+        v = ctx.velas[i]
+        assert conf.precio_espera == base.precio_espera or min(v.o, v.c) <= conf.precio_espera
+        hechas += 1
+    assert hechas > 5

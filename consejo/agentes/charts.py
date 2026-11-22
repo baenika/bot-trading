@@ -44,6 +44,24 @@ def _niveles(ctx, i: int, n: int = 150, ala: int = 3):
     return altos, bajos
 
 
+def zona_confluencia(ctx, i: int, dir_: str, entrada: float, stop: float) -> float | None:
+    """Precio de entrada «por confluencia» (vídeo de entradas en ES1!, 22-nov): tras una vela de expansión
+    el precio suele volver a la zona donde coinciden la mitad del impulso (50 % del cuerpo) y el nivel que
+    acaba de romper (la resistencia rota pasa a soporte). Devuelve ese nivel si está en la mitad del cuerpo
+    más cercana al stop; si no hay nivel que coincida, la mitad del cuerpo. None si queda fuera del plan."""
+    v = ctx.velas[i]
+    cuerpo_bajo, cuerpo_alto = min(v.o, v.c), max(v.o, v.c)
+    mitad = (cuerpo_bajo + cuerpo_alto) / 2
+    altos, bajos = _niveles(ctx, i)
+    if dir_ == "long":
+        rotos = [x for x in altos if cuerpo_bajo <= x <= mitad]
+        precio = max(rotos) if rotos else mitad
+        return precio if stop < precio < entrada else None
+    rotos = [x for x in bajos if mitad <= x <= cuerpo_alto]
+    precio = min(rotos) if rotos else mitad
+    return precio if entrada < precio < stop else None
+
+
 def planificar(ctx, alerta, cfg: dict) -> Plan:
     i = alerta.i
     e = alerta.precio
@@ -66,6 +84,10 @@ def planificar(ctx, alerta, cfg: dict) -> Plan:
         espera = e + ret * (stop - e)
         _, bajos = _niveles(ctx, i)
         estorbo = max((x for x in bajos if obj < x < e * 0.999), default=None)
+    if cfg.get("retroceso_modo") == "confluencia":
+        conf = zona_confluencia(ctx, i, alerta.dir, e, stop)
+        if conf is not None:
+            espera = conf
     riesgo = abs(e - stop) or 1e-9
     rr_real = abs(estorbo - e) / riesgo if estorbo is not None else rr
     return Plan(alerta.dir, e, stop, obj, espera, rr, rr_real, estorbo)

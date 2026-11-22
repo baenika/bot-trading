@@ -33,6 +33,8 @@ Bot de trading multi-agente ("el Consejo") de David. Toda la documentación y lo
 - Análisis bajo pedido: `consejo/analisis.py` (alias como oro, btc, nasdaq); no opera, solo lee velas cerradas
 - Avisos de opción de compra: `papel.texto_opcion` (COMPRAR → 🟢, ESPERAR → 🟡); llegan aunque /avisos silencie los debates
 - Servidor 24/7 (Ubuntu + systemd): `servidor/instalar.sh` y `servidor/LEEME.md`. Solo un proceso lee comandos (el de cripto); la segunda mesa va con `--sin-mando`
+- Entrada por confluencia (opcional): `retroceso_modo: "confluencia"` en la config → el precio de espera es el nivel roto dentro de la mitad del impulso (o el 50 % del cuerpo). Por defecto "pct"
+- Memes anti volumen inflado: `min_txns_h1` y `max_ticket_medio_usd` en consejo/memes/desk.py
 - Panel en el móvil (mismo wifi): `python dashboard_server.py --red`
 - Aprender/autoajuste semanal: `python aprender.py [--telegram]`. Regla de dos tramos (mitad antigua buscar, mitad reciente comprobar), un cambio como mucho, solo parámetros de RANGOS; lo aceptado va a salida/config_auto_<mesa>.json
 - Avisos al móvil: `consejo/avisos.py` (errores, datos que no llegan, paradas, versión nueva, autoajuste); máximo uno igual cada 6 h

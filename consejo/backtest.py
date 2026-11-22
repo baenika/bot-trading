@@ -31,6 +31,7 @@ CONFIG_DEFECTO = {
     "max_barras": 48,
     "espera_barras": 6,
     "retroceso_pct": 25,          # entrada en retroceso: % del camino hacia el stop
+    "retroceso_modo": "pct",      # "pct" (retroceso_pct) o "confluencia" (mitad del impulso + nivel roto)
     "caminos_backtest": 1500,
     "caminos_ultima": 10000,
     "permitir_cortos": False,
