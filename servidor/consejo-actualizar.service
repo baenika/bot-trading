@@ -1,0 +1,6 @@
+[Unit]
+Description=El Consejo - baja la ultima version del repo y reinicia si cambio (avisa al movil de las novedades)
+
+[Service]
+Type=oneshot
+ExecStart=/home/consejo/bot-trading/servidor/actualizar.sh

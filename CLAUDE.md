@@ -28,7 +28,11 @@ Bot de trading multi-agente ("el Consejo") de David. Toda la documentación y lo
 - Las mesas y sus símbolos están en `consejo/mesas.py`
 - Panel: `python dashboard_server.py` y abrir http://localhost:8000 (papel en vivo: `/?fuente=papel`)
 - Papel en vivo: `python papel.py --mesa cripto` (dinero ficticio; Telegram opcional con `telegram.json`, que nunca se sube)
-- Telegram: un solo bot (`py configurar_telegram.py`, guarda telegram.json). papel.py atiende /panel, /analizar, /cartera, /parametros, /avisos, /dashboard
+- Telegram: un solo bot (`py configurar_telegram.py`, guarda telegram.json). papel.py atiende /panel, /analizar [activos], /cartera, /parametros, /avisos, /dashboard, /vincular, /desvincular
+- Grupo: David escribe `/vincular` dentro del grupo → `grupo_id` en telegram.json y los avisos van ahí; en el grupo solo obedece a David (su user id = chat_id privado)
+- Análisis bajo pedido: `consejo/analisis.py` (alias como oro, btc, nasdaq); no opera, solo lee velas cerradas
+- Avisos de opción de compra: `papel.texto_opcion` (COMPRAR → 🟢, ESPERAR → 🟡); llegan aunque /avisos silencie los debates
+- Servidor 24/7 (Ubuntu + systemd): `servidor/instalar.sh` y `servidor/LEEME.md`. Solo un proceso lee comandos (el de cripto); la segunda mesa va con `--sin-mando`
 - Panel en el móvil (mismo wifi): `python dashboard_server.py --red`
 - Aprender/autoajuste semanal: `python aprender.py [--telegram]`. Regla de dos tramos (mitad antigua buscar, mitad reciente comprobar), un cambio como mucho, solo parámetros de RANGOS; lo aceptado va a salida/config_auto_<mesa>.json
 - Avisos al móvil: `consejo/avisos.py` (errores, datos que no llegan, paradas, versión nueva, autoajuste); máximo uno igual cada 6 h

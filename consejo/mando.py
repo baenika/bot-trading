@@ -1,12 +1,15 @@
 """Mando por Telegram: el mismo bot que avisa también obedece unos pocos comandos.
 
-Solo responde al chat de telegram.json (el tuyo). Comandos y botones:
-    /panel       botones
-    /analizar    hace una pasada del Consejo ahora mismo
-    /cartera     capital ficticio, posiciones abiertas y últimas operaciones (cripto y memes)
-    /parametros  la configuración con la que está operando en papel
-    /avisos      silencia o reactiva los avisos de decisiones (el bot sigue trabajando igual)
-    /dashboard   enlace al panel en tiempo real (en el wifi de casa)
+Solo obedece a David: su chat privado (el de telegram.json) y, dentro del grupo vinculado, solo a
+los mensajes y botones que pulsa él. Comandos y botones:
+    /panel              botones
+    /analizar [activos] análisis ahora (por defecto BTC, ETH, S&P 500, Nasdaq y oro; p. ej. /analizar oro btc)
+    /cartera            capital ficticio, posiciones abiertas y últimas operaciones (cripto y memes)
+    /parametros         la configuración con la que está operando en papel
+    /avisos             silencia o reactiva los avisos de decisiones (el bot sigue trabajando igual)
+    /dashboard          enlace al panel en tiempo real (en el wifi de casa)
+    /vincular           (escrito por David DENTRO de un grupo) desde ahora los avisos van a ese grupo
+    /desvincular        los avisos vuelven al chat privado
 
 No hay ningún comando que compre, venda o mueva dinero: todo es papel.
 """
@@ -38,7 +41,9 @@ def _botones(avisos: bool, url_panel: str = "") -> dict:
         [{"text": "🔍 Analizar ahora", "callback_data": "/analizar"}, {"text": "💼 Cartera", "callback_data": "/cartera"}],
         [{"text": "⚙️ Parámetros", "callback_data": "/parametros"},
          {"text": "🔔 Avisos ON" if avisos else "🔕 Avisos OFF", "callback_data": "/avisos"}],
-        [{"text": "📊 Enlace del panel", "callback_data": "/dashboard"}]]}
+        [{"text": "📊 Enlace del panel", "callback_data": "/dashboard"}],
+        [{"text": "🥇 Oro", "callback_data": "/analizar oro"}, {"text": "₿ BTC", "callback_data": "/analizar btc"},
+         {"text": "📈 Nasdaq", "callback_data": "/analizar nasdaq"}]]}
 
 
 def texto_cartera(ruta_cripto: str, ruta_memes: str) -> str:
@@ -72,8 +77,10 @@ def texto_parametros(cfg: dict) -> str:
 
 
 class Mando:
-    def __init__(self, grupo, cfg: dict, ruta_estado: str, ruta_memes: str | None = None, url_panel: str = ""):
+    def __init__(self, grupo, cfg: dict, ruta_estado: str, ruta_memes: str | None = None, url_panel: str = "",
+                 analista=None):
         self.grupo, self.cfg, self.ruta_estado, self.url_panel = grupo, cfg, ruta_estado, url_panel
+        self.analista = analista     # analista("oro btc") -> texto; None = solo hace la pasada
         self.ruta_memes = ruta_memes or os.path.join(RAIZ, "salida", "papel_memes.json")
         self.token = grupo.comun or grupo.tokens.get("risk", "")
         self.chat = str(grupo.chat_id)
@@ -86,8 +93,8 @@ class Mando:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
 
-    def _decir(self, texto: str, botones: bool = False) -> None:
-        datos = {"chat_id": self.chat, "text": texto[:4000]}
+    def _decir(self, texto: str, botones: bool = False, chat: str | None = None) -> None:
+        datos = {"chat_id": chat or self.grupo.destino, "text": texto[:4000]}
         if botones:
             datos["reply_markup"] = _botones(self.grupo.silencio is False, self.url_panel)
         try:
@@ -95,38 +102,74 @@ class Mando:
         except Exception as e:  # noqa: BLE001
             print(f"[mando] {e}")
 
-    def atender(self, upd: dict) -> str | None:
-        """Procesa una actualización. Devuelve "analizar" si hay que hacer una pasada ya."""
+    def _de_david(self, upd: dict) -> tuple[str, str] | None:
+        """(chat, texto) si el mensaje o botón es de David en su chat privado o en el grupo vinculado."""
         cb = upd.get("callback_query")
         msg = upd.get("message") or (cb or {}).get("message") or {}
         chat = str((msg.get("chat") or {}).get("id", ""))
-        if chat != self.chat:
-            return None                      # solo obedece a tu chat
+        quien = str(((cb or msg).get("from") or {}).get("id", ""))
+        texto = ((cb or {}).get("data") or msg.get("text") or "").strip()
+        if chat == self.chat:
+            return chat, texto
+        es_grupo = (msg.get("chat") or {}).get("type") in ("group", "supergroup") or chat.startswith("-")
+        if es_grupo and quien == self.chat and (chat == self.grupo.grupo_id or texto.startswith("/vincular")):
+            return chat, texto
+        return None
+
+    def atender(self, upd: dict) -> str | None:
+        """Procesa una actualización. Devuelve "analizar" si hay que hacer una pasada ya."""
+        de = self._de_david(upd)
+        if de is None:
+            return None                      # solo obedece a David
+        chat, texto = de
+        cb = upd.get("callback_query")
         if cb:
             try:
                 self._api("answerCallbackQuery", {"callback_query_id": cb["id"]})
             except Exception:  # noqa: BLE001
                 pass
-        orden = ((cb or {}).get("data") or msg.get("text") or "").strip().split("@")[0].split(" ")[0].lower()
+        palabras = texto.split()
+        orden = (palabras[0] if palabras else "").split("@")[0].lower()
+        resto = " ".join(palabras[1:])
         if orden in ("/start", "/panel"):
-            self._decir("🏛️ El Consejo (papel, dinero ficticio). ¿Qué quieres ver?", botones=True)
+            self._decir("🏛️ El Consejo (papel, dinero ficticio). ¿Qué quieres ver?", botones=True, chat=chat)
         elif orden == "/analizar":
-            self._decir("🔍 Analizo ahora con las últimas velas cerradas…")
-            return "analizar"
+            if self.analista is None:
+                self._decir("🔍 Analizo ahora con las últimas velas cerradas…", chat=chat)
+                return "analizar"
+            self._decir(f"🔍 Analizando {resto or 'BTC, ETH, S&P 500, Nasdaq y oro'}…", chat=chat)
+            try:
+                self._decir(self.analista(resto), chat=chat)
+            except Exception as e:  # noqa: BLE001
+                self._decir(f"No he podido analizar ahora ({type(e).__name__}). Lo intento en la próxima.", chat=chat)
+            return None if resto else "analizar"
         elif orden == "/cartera":
-            self._decir(texto_cartera(self.ruta_estado, self.ruta_memes))
+            self._decir(texto_cartera(self.ruta_estado, self.ruta_memes), chat=chat)
         elif orden == "/parametros":
-            self._decir(texto_parametros(self.cfg))
+            self._decir(texto_parametros(self.cfg), chat=chat)
         elif orden == "/avisos":
             self.grupo.silencio = not self.grupo.silencio
             self._decir("🔕 Avisos de decisiones en silencio. El Consejo sigue trabajando y apuntando todo."
-                        if self.grupo.silencio else "🔔 Avisos activados.", botones=True)
+                        if self.grupo.silencio else "🔔 Avisos activados.", botones=True, chat=chat)
+        elif orden == "/vincular":
+            if chat == self.chat:
+                self._decir("Escribe /vincular DENTRO del grupo (con el bot añadido) para mandar ahí los avisos.",
+                            chat=chat)
+            else:
+                self.grupo.vincular_grupo(chat)
+                self._decir("✅ Grupo vinculado: a partir de ahora los avisos y las opciones de compra llegan "
+                            "aquí. Solo obedezco tus comandos. Escribe /panel para los botones.", chat=chat)
+        elif orden == "/desvincular":
+            self.grupo.vincular_grupo("")
+            self._decir("Grupo desvinculado: los avisos vuelven a tu chat privado.", chat=chat)
         elif orden == "/dashboard":
             self._decir(f"📊 Panel en tiempo real: {self.url_panel}\nSe abre con el móvil en el mismo wifi que la "
                         "torre, y la torre encendida." if self.url_panel else
-                        "El panel no está abierto a la red de casa. En la torre: py dashboard_server.py --red")
+                        "El panel web no está abierto (en el servidor no se abre a internet a propósito). "
+                        "Usa /cartera y /analizar; en la torre: py dashboard_server.py --red",
+                        chat=chat)
         elif orden.startswith("/"):
-            self._decir("No conozco ese comando. Prueba /panel.")
+            self._decir("No conozco ese comando. Prueba /panel.", chat=chat)
         return None
 
     def esperar(self, segundos: float) -> bool:

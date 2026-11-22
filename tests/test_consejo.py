@@ -781,3 +781,64 @@ def test_ballenas_con_rugcheck_quita_pools(monkeypatch, tmp_path):
     informe["topHolders"][3]["pct"] = 2
     ev = b.pasada({"M": "X"}, ahora=1000.0)
     assert [x["tipo"] for x in ev] == ["venta"]
+
+
+def test_mando_en_grupo_solo_david_y_vincular(tmp_path, monkeypatch):
+    from consejo import mando, telegram
+    ruta = tmp_path / "telegram.json"
+    ruta.write_text(json.dumps({"chat_id": "77", "token": "T"}), encoding="utf-8")
+    g = telegram.Grupo(str(ruta), pausa=0)
+    pedidos = []
+    m = mando.Mando(g, backtest.CONFIG_DEFECTO, str(tmp_path / "p.json"), str(tmp_path / "no.json"),
+                    analista=lambda t: pedidos.append(t) or f"análisis de {t or 'todo'}")
+    dichos = []
+    monkeypatch.setattr(m, "_api", lambda metodo, datos, timeout=10: dichos.append((metodo, datos)) or {})
+    grupo = {"id": -100555, "type": "supergroup"}
+    # otro miembro del grupo no puede vincular ni mandar
+    assert m.atender({"message": {"chat": grupo, "from": {"id": 5}, "text": "/vincular"}}) is None
+    assert not dichos and g.grupo_id == ""
+    # David vincula: queda guardado en telegram.json y el token sigue ahí
+    m.atender({"message": {"chat": grupo, "from": {"id": 77}, "text": "/vincular@CHICOV1Bot"}})
+    assert g.grupo_id == "-100555" and g.destino == "-100555"
+    guardado = json.loads(ruta.read_text(encoding="utf-8"))
+    assert guardado["grupo_id"] == "-100555" and guardado["token"] == "T"
+    assert telegram.Grupo(str(ruta)).destino == "-100555"
+    # análisis con activos: responde en el grupo y no hace pasada
+    assert m.atender({"message": {"chat": grupo, "from": {"id": 77}, "text": "/analizar oro btc"}}) is None
+    assert pedidos == ["oro btc"] and dichos[-1][1] == {"chat_id": "-100555", "text": "análisis de oro btc"}
+    # botón pulsado por otro en el grupo: nada
+    n = len(dichos)
+    m.atender({"callback_query": {"id": "c", "from": {"id": 5}, "data": "/cartera", "message": {"chat": grupo}}})
+    assert len(dichos) == n
+    # sin activos: analiza la lista por defecto y además pide la pasada
+    assert m.atender({"message": {"chat": {"id": 77, "type": "private"}, "from": {"id": 77},
+                                  "text": "/analizar"}}) == "analizar"
+    assert dichos[-1][1]["chat_id"] == "77"
+    m.atender({"message": {"chat": grupo, "from": {"id": 77}, "text": "/desvincular"}})
+    assert g.destino == "77" and "grupo_id" not in json.loads(ruta.read_text(encoding="utf-8"))
+
+
+def test_analisis_bajo_pedido_resuelve_alias_y_no_cae_por_un_activo():
+    from consejo import analisis
+    assert analisis.resolver("Oro, BTC nasdaq") == (["GC=F", "BTCUSDT", "QQQ"], [])
+    assert analisis.resolver("") == (analisis.POR_DEFECTO, [])
+    assert analisis.resolver("petróleo patata") == (["USO"], ["patata"])
+    velas = datos.sinteticas("BTCUSDT", 600, 30000, semilla=3)
+
+    def bajar(s):
+        if s == "GC=F":
+            raise TimeoutError
+        return velas
+    txt = analisis.analizar("btc oro", backtest.CONFIG_DEFECTO, bajar,
+                            {"abiertas": {"BTCUSDT": {"entry": 1.0, "stop": 0.9, "tp": 1.2}}})
+    assert "Bitcoin" in txt and "Tendencia" in txt and "RSI" in txt and "posición abierta" in txt
+    assert "no llegan los precios" in txt and "sin órdenes reales" in txt
+
+
+def test_aviso_de_opcion_de_compra():
+    import papel
+    u = {"symbol": "BTCUSDT", "decision": "COMPRAR", "entry": 100.0, "sl": 95.0, "tp": 110.0, "score": 3}
+    assert "OPCIÓN DE COMPRA" in papel.texto_opcion(u, "cripto") and "Bitcoin" in papel.texto_opcion(u, "cripto")
+    assert "sin ventaja" not in papel.texto_opcion(u, "cripto") and "no tiene ventaja" in papel.texto_opcion(u, "mercados")
+    assert "POSIBLE COMPRA" in papel.texto_opcion({**u, "decision": "ESPERAR", "wait_price": 98.0}, "cripto")
+    assert papel.texto_opcion({**u, "decision": "PASAR"}, "cripto") == ""
